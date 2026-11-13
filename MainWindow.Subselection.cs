@@ -169,7 +169,7 @@ public partial class MainWindow
     {
         if (hit?.ModelHit is { } direct)
             return pickableParts[direct].Part.Kind != PartKind.Sketch ? direct : null;
-        if (!pickableParts.Any(entry => entry.Value.Part.Kind != PartKind.Sketch))
+        if (scenePickRoot?.HasSolids != true)
             return null;
         foreach (var offset in EdgePickOffsets)
         {

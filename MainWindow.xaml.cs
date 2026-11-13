@@ -38,8 +38,23 @@ public partial class MainWindow : Window
     private readonly Dictionary<GeometryModel3D, (Part Part, List<Triangle> Triangles)> pickableParts = [];
     private readonly Dictionary<GeometryModel3D, Vector3D> previewTranslations = [];
     private readonly ConditionalWeakTable<Part, RenderedPart> renderedParts = new();
+    private readonly ConditionalWeakTable<Part, SketchRenderCache> sketchRenderCache = new();
+    private readonly ConditionalWeakTable<RenderedPart, PartModelCache> partModelCache = new();
     private readonly ConditionalWeakTable<List<Triangle>, TrianglePicker> pickers = new();
+    private ScenePickNode? scenePickRoot;
+    private Rect3D sceneBounds = Rect3D.Empty;
     private sealed record RenderedPart(List<Triangle> Triangles, MeshGeometry3D Mesh);
+    private sealed class SketchRenderCache
+    {
+        public double Lift;
+        public RenderedPart? Rendered;
+    }
+
+    private sealed class PartModelCache
+    {
+        public Color Color;
+        public GeometryModel3D? Model;
+    }
     private sealed record SceneHit(GeometryModel3D ModelHit, Point3D PointHit, int TriangleIndex);
     private GeometryModel3D? hoveredModel;
     private SketchSurface? hoveredFace;
@@ -931,20 +946,37 @@ public partial class MainWindow : Window
                 color = Color.FromRgb(Tint(color.R, 255), Tint(color.G, 144), Tint(color.B, 42));
             }
             var rendered = GetRenderedPart(featureMove ? part : displayed);
-            var triangles = rendered.Triangles;
-            var mesh = rendered.Mesh;
             if (sketch)
             {
-                var normal = displayed.SketchVertex(default, 1) - displayed.SketchVertex(default, 0);
                 double lift = Math.Clamp(bedSize * 0.00004, 0.00001, 0.02);
-                triangles = triangles.Select(triangle => triangle.Translate(normal * lift)).ToList();
-                mesh = MakeMesh(triangles);
+                var cache = sketchRenderCache.GetOrCreateValue(featureMove ? part : displayed);
+                if (cache.Rendered is null || cache.Lift != lift)
+                {
+                    var normal = displayed.SketchVertex(default, 1) - displayed.SketchVertex(default, 0);
+                    var lifted = rendered.Triangles.Select(triangle => triangle.Translate(normal * lift)).ToList();
+                    cache.Rendered = new RenderedPart(lifted, MakeMesh(lifted));
+                    cache.Lift = lift;
+                }
+                rendered = cache.Rendered;
             }
             var translation = featureMove ? new Vector3D(displayed.X - part.X, displayed.Y - part.Y, displayed.Z - part.Z) : default;
-            var model = MakeModel(mesh, color, bothSides: sketch, translation);
+            GeometryModel3D model;
             if (translation.LengthSquared > 0)
+            {
+                model = MakeModel(rendered.Mesh, color, bothSides: sketch, translation);
                 previewTranslations.Add(model, translation);
-            pickableParts.Add(model, (part, triangles));
+            }
+            else
+            {
+                var cache = partModelCache.GetOrCreateValue(rendered);
+                if (cache.Model is null || cache.Color != color)
+                {
+                    cache.Model = MakeModel(rendered.Mesh, color, bothSides: sketch);
+                    cache.Color = color;
+                }
+                model = cache.Model;
+            }
+            pickableParts.Add(model, (part, rendered.Triangles));
             models.Children.Add(model);
         }
         if (choosingSketchSurface)
@@ -972,6 +1004,8 @@ public partial class MainWindow : Window
         models.Children.Add(MakeModel(rim.Select((point, i) => new Triangle(center, point, rim[(i + 1) % rim.Length])),
             Color.FromRgb(160, 214, 255)));
         Scene.Content = models;
+        sceneBounds = models.Bounds;
+        RebuildScenePickIndex();
         DrawFeaturePreview();
         FitBuildCameraDepth();
         UpdateOriginPlaneOverlay();
@@ -1102,20 +1136,9 @@ public partial class MainWindow : Window
         var eye = Camera.Position;
         SceneHit? nearestPart = null;
         double distance = far;
-        foreach (var (model, entry) in pickableParts)
-        {
-            if (onlySketch is not null && !ReferenceEquals(entry.Part, onlySketch))
-                continue;
-            bool sketch = entry.Part.Kind == PartKind.Sketch;
-            if (sketch && (!includeSketches || choosingSketchSurface || choosingHoleFace || choosingThreadFace || choosingMovePart || choosingBevelPart))
-                continue;
-            if (!TrianglePicker.Intersects(model.Bounds, eye, ray, near, distance))
-                continue;
-            var picker = pickers.GetValue(entry.Triangles, static triangles => new TrianglePicker(triangles));
-            int index = picker.Find(eye - previewTranslations.GetValueOrDefault(model), ray, near, sketch, ref distance);
-            if (index >= 0)
-                nearestPart = new SceneHit(model, eye + ray * distance, index);
-        }
+        int nearestOrder = int.MaxValue;
+        bool allowSketches = includeSketches && !(choosingSketchSurface || choosingHoleFace || choosingThreadFace || choosingMovePart || choosingBevelPart);
+        Visit(scenePickRoot);
         SketchPlane? nearestPlane = null;
         if (choosingSketchSurface)
         {
@@ -1140,6 +1163,35 @@ public partial class MainWindow : Window
             }
         }
         return (nearestPart, nearestPlane);
+
+        void Visit(ScenePickNode? node)
+        {
+            if (node is null || (!allowSketches && !node.HasSolids) ||
+                !TrianglePicker.Intersects(node.Bounds, eye, ray, near, distance))
+                return;
+            if (node.Entries is not { } entries)
+            {
+                Visit(node.Left);
+                Visit(node.Right);
+                return;
+            }
+            foreach (var entry in entries)
+            {
+                if ((!allowSketches && entry.IsSketch) ||
+                    (onlySketch is not null && !ReferenceEquals(entry.Part, onlySketch)) ||
+                    !TrianglePicker.Intersects(entry.Bounds, eye, ray, near, distance))
+                    continue;
+                var picker = pickers.GetValue(entry.Triangles, static triangles => new TrianglePicker(triangles));
+                double hitDepth = nearestPart is null ? distance : Math.BitIncrement(distance);
+                int index = picker.Find(eye - entry.Translation, ray, near, entry.IsSketch, ref hitDepth);
+                if (index >= 0 && (hitDepth < distance || entry.Order < nearestOrder))
+                {
+                    distance = hitDepth;
+                    nearestOrder = entry.Order;
+                    nearestPart = new SceneHit(entry.Model, eye + ray * distance, index);
+                }
+            }
+        }
     }
 
     private void PickPart(Point point)
@@ -1468,7 +1520,7 @@ public partial class MainWindow : Window
     }
 
     private void FitBuildCameraDepth() => ViewportCamera.FitDepth(Camera, distance,
-        Scene.Content?.Bounds ?? Rect3D.Empty, FeaturePreview.Content?.Bounds ?? Rect3D.Empty);
+        sceneBounds, FeaturePreview.Content?.Bounds ?? Rect3D.Empty);
 
     private void OrbitStart(object sender, MouseButtonEventArgs e)
     {

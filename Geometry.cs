@@ -215,6 +215,14 @@ public sealed record Part(PartKind Kind, string Name, double Width, double Depth
         if (Kind is not (PartKind.Extrusion or PartKind.Sketch))
             return new Rect3D(-Width / 2, -FootprintDepth / 2, 0, Width, FootprintDepth, Height);
 
+        return profileBounds.GetValue(this, static part => new ProfileBounds(part.CalculateProfileBounds())).Bounds;
+    }
+
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Part, ProfileBounds> profileBounds = new();
+    private sealed record ProfileBounds(Rect3D Bounds);
+
+    private Rect3D CalculateProfileBounds()
+    {
         var bounds = Rect3D.Empty;
         foreach (var point in SketchProfiles.Concat(OpenPaths ?? []).SelectMany(profile => profile))
         {
