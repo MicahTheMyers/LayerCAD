@@ -121,7 +121,7 @@ internal static class SketchProfileSplit
         return inside;
     }
 
-    private static SketchPoint[] Clean(IEnumerable<SketchPoint> source)
+    internal static SketchPoint[] Clean(IEnumerable<SketchPoint> source)
     {
         var points = source.ToList();
         for (int i = points.Count - 1; i >= 0 && points.Count >= 3; i--)

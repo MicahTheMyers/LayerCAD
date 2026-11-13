@@ -129,6 +129,8 @@ public partial class SketchEditor
         }
         var (start, end) = breakingPath ? (hit.Position, hit.Position) :
             TrimRange(profile, hit.Edge, hit.Position, !open && IsCircularProfile(profile));
+        if (!breakingPath && !open && TryMergeTrimmedProfiles(profile, start, end))
+            return true;
         var pieces = open
             ? new[] { PathBetween(profile, 0, start), PathBetween(profile, end, edges) }
             : new[] { PathBetween(profile, end, start + edges) };
@@ -156,6 +158,100 @@ public partial class SketchEditor
         Refresh(-1);
         Feedback.Text = breakingPath ? "Split the path into two drawings." : "Trimmed sketch segment.";
         return true;
+    }
+
+    private bool TryMergeTrimmedProfiles(List<SketchPoint> profile, double start, double end)
+    {
+        var removed = PathBetween(profile, start, end);
+        if (removed.Length < 2)
+            return false;
+        var remaining = PathBetween(profile, end, start + profile.Count);
+        if (remaining.Length < 2)
+            return false;
+
+        foreach (var other in profiles)
+        {
+            if (ReferenceEquals(profile, other) || openProfiles.Contains(other))
+                continue;
+            if (!TryFindSharedTrim(other, removed, out var otherStart, out var otherEnd, out var reversed))
+                continue;
+            var otherRemaining = PathBetween(other, otherEnd, otherStart + other.Count);
+            if (otherRemaining.Length < 2)
+                continue;
+            if (!reversed)
+                Array.Reverse(otherRemaining);
+            var joined = SketchProfileSplit.Clean(remaining.Concat(otherRemaining.Skip(1).SkipLast(1)));
+            if (!SketchGeometry.TryTriangulate(joined, out _, out _))
+                continue;
+
+            var before = CaptureSketch();
+            int index = Math.Min(profiles.IndexOf(profile), profiles.IndexOf(other));
+            foreach (var old in new[] { profile, other })
+            {
+                profiles.Remove(old);
+                profileDimensions.Remove(old);
+                constraints.Remove(old);
+                selectedDrawings.Remove(old);
+            }
+            bool hasOriginal = originalProfiles.Remove(profile, out int original);
+            bool hasOtherOriginal = originalProfiles.Remove(other, out int otherOriginal);
+            if (hasOtherOriginal)
+                original = hasOriginal ? Math.Min(original, otherOriginal) : otherOriginal;
+            points = joined.ToList();
+            profiles.Insert(index, points);
+            if (hasOriginal || hasOtherOriginal)
+                originalProfiles.Add(points, original);
+            RecordSketchEdit(before);
+            Refresh(-1);
+            Feedback.Text = "Trimmed the shared edge and joined the two profiles.";
+            return true;
+        }
+        return false;
+    }
+
+    private static bool TryFindSharedTrim(List<SketchPoint> profile, SketchPoint[] removed,
+        out double start, out double end, out bool reversed)
+    {
+        foreach (double first in Stations(removed[0]))
+        foreach (double last in Stations(removed[^1]))
+        {
+            start = first;
+            end = last > first ? last : last + profile.Count;
+            reversed = false;
+            if (Matches(PathBetween(profile, start, end), removed))
+                return true;
+            start = last;
+            end = first > last ? first : first + profile.Count;
+            reversed = true;
+            if (Matches(PathBetween(profile, start, end).Reverse(), removed))
+                return true;
+        }
+        start = end = 0;
+        reversed = false;
+        return false;
+
+        IEnumerable<double> Stations(SketchPoint point)
+        {
+            for (int i = 0; i < profile.Count; i++)
+            {
+                var origin = profile[i];
+                var edge = Difference(origin, profile[(i + 1) % profile.Count]);
+                if (edge.LengthSquared <= TrimTolerance * TrimTolerance)
+                    continue;
+                double t = Vector.Multiply(Difference(origin, point), edge) / edge.LengthSquared;
+                if (t >= 0 && t < 1 && (Difference(origin, point) - t * edge).Length <= TrimTolerance)
+                    yield return i + t;
+                else if (Difference(origin, point).Length <= TrimTolerance)
+                    yield return i;
+            }
+        }
+
+        static bool Matches(IEnumerable<SketchPoint> path, SketchPoint[] expected)
+        {
+            var vertices = path.ToArray();
+            return vertices.Length == expected.Length &&
+                vertices.Zip(expected).All(pair => Difference(pair.First, pair.Second).Length <= TrimTolerance);
+        }
     }
 
     private (double Start, double End) TrimRange(List<SketchPoint> profile, int edge, double position, bool circular)

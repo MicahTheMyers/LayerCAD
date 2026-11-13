@@ -284,6 +284,16 @@ public partial class MainWindow : Window
             SetLassoSelection([], extend: false);
             e.Handled = true;
         }
+        else if (e.Key is Key.Back or Key.Delete && Keyboard.Modifiers == ModifierKeys.None && Selected is not null)
+        {
+            if (!e.IsRepeat)
+            {
+                var selection = lassoSelection.ToHashSet<Part>(ReferenceEqualityComparer.Instance);
+                selection.Add(Selected);
+                DeleteParts(selection);
+            }
+            e.Handled = true;
+        }
     }
 
     private void EditSketch(object sender, RoutedEventArgs e)
@@ -432,21 +442,28 @@ public partial class MainWindow : Window
     private void DeletePart(object sender, RoutedEventArgs e)
     {
         EndBuildFeature();
+        if (Selected is { } part)
+            DeleteParts(new HashSet<Part>(ReferenceEqualityComparer.Instance) { part });
+    }
+
+    private void DeleteParts(HashSet<Part> selection)
+    {
         int index = SelectedPartIndex;
-        if (index < 0)
+        var deleted = parts.Where(selection.Contains).ToArray();
+        if (deleted.Length == 0)
             return;
-        var deleted = parts[index];
-        string name = deleted.Name;
-        parts.RemoveAt(index);
-        if (deleted is { Kind: PartKind.Sketch, SketchId: Guid id })
+        var deletedSketches = deleted.Where(part => part.Kind == PartKind.Sketch)
+            .Select(part => part.SketchId).OfType<Guid>().ToHashSet();
+        parts.RemoveAll(selection.Contains);
+        if (deletedSketches.Count > 0)
         {
             for (int i = 0; i < parts.Count; i++)
-                if (parts[i].SketchId == id)
+                if (parts[i].SketchId is Guid id && deletedSketches.Contains(id))
                     parts[i] = parts[i] with { SketchId = null, SketchProfileIndex = 0 };
         }
         MarkDirty();
         RefreshParts(Math.Min(index, parts.Count - 1));
-        SetStatus($"Deleted {name}.");
+        SetStatus(deleted.Length == 1 ? $"Deleted {deleted[0].Name}." : $"Deleted {deleted.Length} items.");
     }
 
     private void OpenPartMenu(object sender, RoutedEventArgs e)

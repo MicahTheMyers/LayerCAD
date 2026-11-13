@@ -129,7 +129,10 @@ public partial class SketchEditor
         }
         else if (cancel && PlacementStart is null && selectedDrawings.Count > 0)
         {
-            SetDrawingSelection([], extend: false, toggle: false);
+            if (e.Key == Key.Escape)
+                SetDrawingSelection([], extend: false, toggle: false);
+            else if (Keyboard.Modifiers == ModifierKeys.None && !e.IsRepeat)
+                DeleteProfiles(selectedDrawings.ToArray());
             e.Handled = true;
         }
         else if (PlacementStart is not null)
