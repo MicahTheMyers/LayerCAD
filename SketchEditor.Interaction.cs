@@ -296,7 +296,10 @@ public partial class SketchEditor
             cameraPan += ViewportCamera.Pan(ReferenceCamera, Drawing.ActualWidth, cameraDistance, delta);
         else
             (orbitYaw, orbitPitch) = ViewportCamera.Orbit(orbitYaw, orbitPitch, delta);
-        Redraw();
+        bool dragging = orbitPoint is not null && orbitButton == MouseButton.Middle;
+        if (dragging)
+            UpdateMeasurements([], closed: false);
+        RedrawSketch(navigating: dragging);
     }
 
     private void SetSketchView(Vector3D direction)
@@ -372,7 +375,7 @@ public partial class SketchEditor
             return false;
         if (button == MouseButton.Middle)
             orbitQueue.Flush();
-        bool click = !sketchOrbitMoved && (location - orbitOrigin).LengthSquared < 16;
+        bool click = !sketchOrbitMoved && IsSketchGestureClick(location);
         if (drawingSelectionPath is not null)
         {
             orbitPoint = null;
@@ -384,6 +387,8 @@ public partial class SketchEditor
         bool previewEnd = button == MouseButton.Left && !click && !awaitingDragConfirmation && PlacementStart is not null;
         orbitPoint = null;
         Drawing.ReleaseMouseCapture();
+        if (button == MouseButton.Middle && sketchOrbitMoved)
+            Redraw();
         if (trimming && click && button == MouseButton.Left)
         {
             if (TrimAt(location))
@@ -415,10 +420,13 @@ public partial class SketchEditor
 
     private void LoseOrbit(object sender, MouseEventArgs e)
     {
+        bool redraw = orbitPoint is not null && orbitButton == MouseButton.Middle && sketchOrbitMoved;
         ClearDrawingSelectionGesture();
         orbitPoint = null;
         orbitQueue.Cancel();
         panDrag = false;
+        if (redraw)
+            Redraw();
     }
 
     private void ZoomSketch(object sender, MouseWheelEventArgs e)

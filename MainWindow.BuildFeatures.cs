@@ -229,10 +229,12 @@ public partial class MainWindow
 
     private void StartBevel(Part source)
     {
+        var sourceEdges = selectedEdges.Where(item => ReferenceEquals(item.Part, source)).Select(item => item.Edge);
+        var sourceCorners = selectedCorners.Where(item => ReferenceEquals(item.Part, source)).Select(item => item.Point);
         var preselected = RoundBevel.Surface(source) is { } round
-            ? selectedEdges.Select(edge => RoundRimAt(source, round, edge.Start)).Distinct().ToArray()
-            : selectedEdges.Select(edge => edge.Start + (edge.End - edge.Start) * 0.5)
-            .Concat(selectedCorners).Select(ProjectViewportPoint).OfType<Point>()
+            ? sourceEdges.Select(edge => RoundRimAt(source, round, edge.Start)).Distinct().ToArray()
+            : sourceEdges.Select(edge => edge.Start + (edge.End - edge.Start) * 0.5)
+            .Concat(sourceCorners).Select(ProjectViewportPoint).OfType<Point>()
             .Select(point => FindBevelTarget(source, point)).OfType<BoxBevelTarget>()
             .Where(target => target.AxisCount > 1).ToArray();
         EndBuildFeature();
@@ -684,7 +686,7 @@ public partial class MainWindow
         if (best is not null)
             return best;
 
-        distance = 11;
+        distance = EdgePickRadius;
         foreach (var edge in BoxBevelTarget.Edges)
         {
             if (!Visible(edge))

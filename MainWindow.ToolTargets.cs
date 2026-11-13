@@ -61,7 +61,7 @@ public partial class MainWindow
             return RoundRimAt(part, surface, hit.PointHit);
 
         BoxBevelTarget? closest = null;
-        double distance = 100;
+        double distance = EdgePickRadius * EdgePickRadius;
         var projection = BuildProjection;
         foreach (bool top in new[] { true, false })
         {

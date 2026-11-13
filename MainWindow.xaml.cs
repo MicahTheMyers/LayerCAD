@@ -506,7 +506,10 @@ public partial class MainWindow : Window
     private void RefreshParts(int index)
     {
         sketchProfileSelection = null;
-        lassoSelection.IntersectWith(parts.Where(part => !part.Hidden));
+        var visible = parts.Where(part => !part.Hidden).ToHashSet<Part>(ReferenceEqualityComparer.Instance);
+        lassoSelection.IntersectWith(visible);
+        selectedEdges.RemoveWhere(item => !visible.Contains(item.Part));
+        selectedCorners.RemoveWhere(item => !visible.Contains(item.Part));
         if (selectedFaces.RemoveAll(item => !parts.Any(part => ReferenceEquals(part, item.Surface.Part) && !part.Hidden)) > 0)
             RebuildFaceHighlights();
         updatingSelection = true;
@@ -568,8 +571,8 @@ public partial class MainWindow : Window
             sketchProfileSelection = null;
         if (!changingViewportSelection && (Selected is not { } selected || !lassoSelection.Contains(selected)))
             lassoSelection.Clear();
-        if (!changingViewportSelection && (Selected is not { } facePart || !selectedFaces.Any(face => ReferenceEquals(face.Surface.Part, facePart))))
-            ClearSelectedFace();
+        if (!changingViewportSelection)
+            ClearSolidDetail();
         if (featureSource is not null && !ReferenceEquals(featureSource, Selected))
             EndBuildFeature();
         partPopupDismissed = false;
@@ -976,6 +979,18 @@ public partial class MainWindow : Window
         static byte Tint(byte surface, byte highlight) => (byte)((surface * 81 + highlight * 19) / 100);
     }
 
+    private Rect OriginPlanePickerBounds(SketchPlane plane)
+    {
+        double span = Math.Min(bed.X, bed.Y) * 0.115;
+        double height = plane == SketchPlane.XY ? span : Math.Min(span, bed.Z);
+        double width = span * 0.84;
+        double depth = height * 0.84;
+        // Face the three pick regions into the default isometric view.
+        double u = plane == SketchPlane.YZ ? -span : span - width;
+        double v = plane == SketchPlane.XY ? -height : height - depth;
+        return new Rect(u, v, width, depth);
+    }
+
     private void UpdateOriginPlaneOverlay()
     {
         OriginPlaneOverlay.Data = null;
@@ -983,15 +998,14 @@ public partial class MainWindow : Window
         if (!choosingSketchSurface)
             return;
 
-        double span = Math.Min(bed.X, bed.Y) * 0.115;
         var planes = new GeometryGroup { FillRule = FillRule.Nonzero };
         foreach (var plane in Enum.GetValues<SketchPlane>())
         {
-            double vertical = plane == SketchPlane.XY ? span : Math.Min(span, bed.Z);
-            if (ProjectViewportPoint(plane.ToModel(0, 0, 0)) is not Point a ||
-                ProjectViewportPoint(plane.ToModel(span, 0, 0)) is not Point b ||
-                ProjectViewportPoint(plane.ToModel(span, vertical, 0)) is not Point c ||
-                ProjectViewportPoint(plane.ToModel(0, vertical, 0)) is not Point d)
+            var bounds = OriginPlanePickerBounds(plane);
+            if (ProjectViewportPoint(plane.ToModel(bounds.Left, bounds.Top, 0)) is not Point a ||
+                ProjectViewportPoint(plane.ToModel(bounds.Right, bounds.Top, 0)) is not Point b ||
+                ProjectViewportPoint(plane.ToModel(bounds.Right, bounds.Bottom, 0)) is not Point c ||
+                ProjectViewportPoint(plane.ToModel(bounds.Left, bounds.Bottom, 0)) is not Point d)
                 continue;
             var outline = new StreamGeometry();
             using (var path = outline.Open())
@@ -1038,7 +1052,6 @@ public partial class MainWindow : Window
         SketchPlane? nearestPlane = null;
         if (choosingSketchSurface)
         {
-            double span = Math.Min(bed.X, bed.Y) * 0.115;
             distance = far;
             foreach (var plane in Enum.GetValues<SketchPlane>())
             {
@@ -1052,8 +1065,7 @@ public partial class MainWindow : Window
                 var pointOnPlane = (Vector3D)(eye + ray * depth);
                 double u = Vector3D.DotProduct(pointOnPlane, (Vector3D)plane.ToModel(1, 0, 0));
                 double v = Vector3D.DotProduct(pointOnPlane, (Vector3D)plane.ToModel(0, 1, 0));
-                double vertical = plane == SketchPlane.XY ? span : Math.Min(span, bed.Z);
-                if (u >= -1e-8 && u <= span + 1e-8 && v >= -1e-8 && v <= vertical + 1e-8)
+                if (OriginPlanePickerBounds(plane).Contains(u, v))
                 {
                     nearestPlane = plane;
                     distance = depth;

@@ -8,6 +8,14 @@ namespace LayerCAD;
 
 public partial class MainWindow
 {
+    private const double EdgePickRadius = 13;
+    private static readonly Vector[] EdgePickOffsets =
+    [
+        new(6, 0), new(-6, 0), new(0, 6), new(0, -6),
+        new(8, 8), new(-8, 8), new(8, -8), new(-8, -8),
+        new(12, 0), new(-12, 0), new(0, 12), new(0, -12)
+    ];
+
     private sealed record SharpEdge(Point3D Start, Point3D End, List<Vector3D> Normals)
     {
         public bool FacesCamera(Point3D eye) => Normals.Any(normal => Vector3D.DotProduct(eye - Start, normal) > 0);
@@ -15,13 +23,12 @@ public partial class MainWindow
     }
 
     private sealed record SolidEdges(Dictionary<Point3D, List<SharpEdge>> Joints, HashSet<Point3D> Corners, SharpEdge[] Edges);
-    private Part? selectionMeshPart;
     private readonly ConditionalWeakTable<List<Triangle>, SolidEdges> solidEdges = new();
     private (SketchSurface Surface, Point3D Origin)? selectedFace;
     private readonly List<(SketchSurface Surface, Point3D Origin)> selectedFaces = [];
     private GeometryModel3D? selectedFaceHighlight;
-    private readonly HashSet<SharpEdge> selectedEdges = [];
-    private readonly HashSet<Point3D> selectedCorners = [];
+    private readonly HashSet<(Part Part, SharpEdge Edge)> selectedEdges = [];
+    private readonly HashSet<(Part Part, Point3D Point)> selectedCorners = [];
 
     private void HoverSolidFace(Point mouse)
     {
@@ -110,20 +117,16 @@ public partial class MainWindow
             return false;
         }
         var entry = pickableParts[model];
-        if (!ReferenceEquals(selectionMeshPart, entry.Part))
-        {
-            selectedEdges.Clear();
-            selectedCorners.Clear();
-            selectionMeshPart = entry.Part;
-        }
         var topology = solidEdges.GetValue(entry.Triangles, static mesh => FindSolidEdges(mesh));
         var (corner, nearest) = FindDetail(mouse, topology);
         if (corner is Point3D point)
         {
             if (!extend)
                 ClearSolidDetail();
-            if (!selectedCorners.Add(point) && toggle)
-                selectedCorners.Remove(point);
+            PreserveBodySelection(entry.Part, extend);
+            var cornerSelection = (entry.Part, point);
+            if (!selectedCorners.Add(cornerSelection) && toggle)
+                selectedCorners.Remove(cornerSelection);
             CompleteDetailSelection(entry.Part, "Corner");
             return true;
         }
@@ -137,13 +140,15 @@ public partial class MainWindow
         }
         if (!extend)
             ClearSolidDetail();
+        PreserveBodySelection(entry.Part, extend);
         var chain = new HashSet<SharpEdge> { nearest };
         ExtendChain(nearest, nearest.Start);
         ExtendChain(nearest, nearest.End);
-        if (toggle && chain.All(selectedEdges.Contains))
-            selectedEdges.ExceptWith(chain);
+        var edgeSelection = chain.Select(edge => (entry.Part, edge));
+        if (toggle && edgeSelection.All(selectedEdges.Contains))
+            selectedEdges.ExceptWith(edgeSelection);
         else
-            selectedEdges.UnionWith(chain);
+            selectedEdges.UnionWith(edgeSelection);
         CompleteDetailSelection(entry.Part, "Edge");
         return true;
 
@@ -162,19 +167,17 @@ public partial class MainWindow
 
     private GeometryModel3D? DetailModel(Point mouse, SceneHit? hit)
     {
-        var model = hit?.ModelHit;
-        if (model is null && Selected is { Hidden: false } selected)
-            model = pickableParts.FirstOrDefault(entry => ReferenceEquals(entry.Value.Part, selected)).Key;
-        if (model is null)
+        if (hit?.ModelHit is { } direct)
+            return pickableParts[direct].Part.Kind != PartKind.Sketch ? direct : null;
+        if (!pickableParts.Any(entry => entry.Value.Part.Kind != PartKind.Sketch))
+            return null;
+        foreach (var offset in EdgePickOffsets)
         {
-            foreach (var offset in new Vector[] { new(4, 0), new(-4, 0), new(0, 4), new(0, -4) })
-            {
-                model = HitScene(mouse + offset).Part?.ModelHit;
-                if (model is not null)
-                    break;
-            }
+            var neighbor = HitSceneCore(mouse + offset, includeSketches: false).Part;
+            if (neighbor is not null)
+                return neighbor.ModelHit;
         }
-        return model is not null && pickableParts[model].Part.Kind != PartKind.Sketch ? model : null;
+        return null;
     }
 
     private (Point3D? Corner, SharpEdge? Edge) FindDetail(Point mouse, SolidEdges topology, Vector3D translation = default)
@@ -191,7 +194,7 @@ public partial class MainWindow
         }
 
         SharpEdge? nearest = null;
-        double gap = 8;
+        double gap = EdgePickRadius;
         foreach (var edge in topology.Edges)
         {
             if (!edge.FacesCamera(Camera.Position - translation) ||
@@ -221,10 +224,9 @@ public partial class MainWindow
         if (face is null)
             return false;
 
-        selectedEdges.Clear();
-        selectedCorners.Clear();
         if (!extend)
-            selectedFaces.Clear();
+            ClearSolidDetail();
+        PreserveBodySelection(part, extend);
         if (extend && index >= 0)
         {
             if (toggle)
@@ -247,10 +249,26 @@ public partial class MainWindow
         return (hit.PointHit - Camera.Position).Length >= distance - Math.Max(0.03, distance * 0.005);
     }
 
+    private void PreserveBodySelection(Part target, bool extend)
+    {
+        if (extend && Selected is { Hidden: false } previous && !ReferenceEquals(previous, target) &&
+            lassoSelection.Count == 0 && selectedFaces.Count == 0 && selectedEdges.Count == 0 && selectedCorners.Count == 0)
+            lassoSelection.Add(previous);
+    }
+
     private void CompleteDetailSelection(Part part, string type)
     {
         partPopupDismissed = false;
-        PartList.SelectedItem = part;
+        bool wasChangingSelection = changingViewportSelection;
+        changingViewportSelection = true;
+        try
+        {
+            PartList.SelectedItem = part;
+        }
+        finally
+        {
+            changingViewportSelection = wasChangingSelection;
+        }
         UpdatePartPopup();
         UpdateSolidDetailMarkers();
         SetStatus(selectedFaces.Count > 1 ? $"{selectedFaces.Count} faces selected." : selectedFace is not null ? $"Selected a face on {part.Name}. Create Sketch opens on this face." :
@@ -291,14 +309,12 @@ public partial class MainWindow
             return;
         }
         SolidFaceHighlight.Content = selectedFaceHighlight;
-        if (!ReferenceEquals(Selected, selectionMeshPart))
-            return;
         var edges = new GeometryGroup();
-        foreach (var edge in selectedEdges.Where(edge => edge.FacesCamera(Camera.Position)))
+        foreach (var (_, edge) in selectedEdges.Where(item => item.Edge.FacesCamera(Camera.Position)))
             AddBevelLine(edges, edge.Start, edge.End);
         SolidEdgeMarkers.Data = edges;
         var corners = new GeometryGroup();
-        foreach (var corner in selectedCorners)
+        foreach (var (_, corner) in selectedCorners)
         {
             if (ProjectViewportPoint(corner) is Point screen && IsDetailVisible(corner, screen))
                 corners.Children.Add(new EllipseGeometry(screen, 4.5, 4.5));

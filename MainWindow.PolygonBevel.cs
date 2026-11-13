@@ -25,7 +25,7 @@ public partial class MainWindow
         }
         if (nearest is not null)
             return nearest;
-        best = 121;
+        best = EdgePickRadius * EdgePickRadius;
         foreach (var edge in polygon.Edges())
         {
             var (a, b) = polygon.Segment(edge);

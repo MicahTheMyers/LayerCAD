@@ -98,7 +98,10 @@ public partial class MainWindow
         if (extend && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
             lassoSelection.SymmetricExceptWith(selection);
-            selectedFaces.RemoveAll(face => !lassoSelection.Contains(face.Surface.Part));
+            var removed = selection.Where(part => !lassoSelection.Contains(part)).ToHashSet<Part>(ReferenceEqualityComparer.Instance);
+            selectedFaces.RemoveAll(face => removed.Contains(face.Surface.Part));
+            selectedEdges.RemoveWhere(item => removed.Contains(item.Part));
+            selectedCorners.RemoveWhere(item => removed.Contains(item.Part));
             selection = lassoSelection.ToArray();
         }
         SetLassoSelection(selection, extend, preserveFaces: true);
@@ -116,8 +119,6 @@ public partial class MainWindow
     private void PickViewportSelection(Point point, bool extend)
     {
         var hit = HitScene(point).Part ?? SketchBoundaryHit(point);
-        if (extend && hit is null)
-            return;
         if (extend && hit is not null && pickableParts[hit.ModelHit].Part is { Kind: PartKind.Sketch } sketch)
         {
             TogglePartSelection(sketch, toggle: Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
@@ -130,7 +131,12 @@ public partial class MainWindow
         try
         {
             if (!PickSolidDetailAt(point, extend))
-                PickPart(point);
+            {
+                if (extend && hit is not null)
+                    TogglePartSelection(pickableParts[hit.ModelHit].Part, toggle: Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+                else if (!extend)
+                    PickPart(point);
+            }
         }
         finally
         {
@@ -142,7 +148,8 @@ public partial class MainWindow
 
     private void TogglePartSelection(Part part, bool toggle = true)
     {
-        if (lassoSelection.Count == 0 && Selected is { Hidden: false } previous && selectedFaces.Count == 0)
+        if (lassoSelection.Count == 0 && Selected is { Hidden: false } previous &&
+            selectedFaces.Count == 0 && selectedEdges.Count == 0 && selectedCorners.Count == 0)
             lassoSelection.Add(previous);
         if (!lassoSelection.Add(part) && toggle)
             lassoSelection.Remove(part);
@@ -184,9 +191,7 @@ public partial class MainWindow
     private void SelectFacesInRegion(StreamGeometry area, bool extend)
     {
         if (!extend)
-            selectedFaces.Clear();
-        selectedEdges.Clear();
-        selectedCorners.Clear();
+            ClearSolidDetail();
         foreach (var (model, (part, triangles)) in pickableParts)
         {
             if (part.Kind == PartKind.Sketch || !lassoSelection.Contains(part))

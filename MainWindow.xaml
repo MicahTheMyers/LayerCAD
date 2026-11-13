@@ -162,8 +162,9 @@
                                     <Button Style="{StaticResource RibbonTool}" Click="CreateSketch" ToolTip="Create Sketch on a plane or face"
                                         AutomationProperties.Name="Create Sketch">
                                         <Grid Width="30" Height="30">
-                                            <Path Data="M 3,4 H 22 V 22 H 3 Z" Fill="#548DB4" Stretch="None"/>
-                                            <Path Data="M 4,23 V 5 H 23 M 8,20 L 12,18 L 23,7 L 20,4 L 9,15 Z M 24,17 V 27 M 19,22 H 29" Stroke="#A9EEC1" StrokeThickness="1.5" Stretch="None"
+                                            <Path Data="M 4,9 H 19 V 25 H 4 Z" Fill="#263C50" Stroke="#91C5EB"
+                                                StrokeThickness="1.5" StrokeDashArray="2,2" Stretch="None"/>
+                                            <Path Data="M 10,20 L 11,15 L 23,3 L 27,7 L 15,19 Z M 20,6 L 24,10" Stroke="#D7EBFF" Fill="#548DB4" StrokeThickness="1.5" Stretch="None"
                                                 StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                                         </Grid>
                                     </Button>
@@ -241,6 +242,11 @@
                                     AutomationProperties.Name="Modify tools">
                                     <Button.ContextMenu>
                                         <ContextMenu>
+                                            <MenuItem Header="Bevel…" InputGestureText="Ctrl+B" Click="BeginBevel">
+                                                <MenuItem.Icon>
+                                                    <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,3 H 9 L 14,8 V 13 H 2 Z M 9,3 V 8 H 14"/>
+                                                </MenuItem.Icon>
+                                            </MenuItem>
                                             <MenuItem Header="Linear Pattern…" Tag="Pattern" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 1,3 H 5 V 7 H 1 Z M 7,3 H 11 V 7 H 7 Z M 1,9 H 5 V 13 H 1 Z M 7,9 H 11 V 13 H 7 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
                                             <MenuItem Header="Combine…" Tag="Combine" Click="OpenSolidModify">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,2 H 10 V 10 H 2 Z M 6,6 H 14 V 14 H 6 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
                                             <MenuItem Header="Shell…" Tag="Shell" Click="OpenSolidModify">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,3 V 13 L 8,15 L 14,13 V 3 M 2,3 L 8,5 L 14,3 L 8,1 Z M 5,3 L 8,4 L 11,3 L 8,2 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
@@ -329,11 +335,11 @@
                         <StackPanel x:Name="SketchSelectionPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="10,0,0,0">
                             <StackPanel x:Name="OriginPlaneTools" Orientation="Horizontal">
                                 <TextBlock Text="Origin planes" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                <Button Content="XY" Tag="XY" Padding="7,5" Click="ChooseStandardPlane"
+                                <Button Content="XY" Tag="XY" Padding="9,5" Margin="0,0,6,0" Click="ChooseStandardPlane"
                                     AutomationProperties.Name="XY plane"/>
-                                <Button Content="XZ" Tag="XZ" Padding="7,5" Click="ChooseStandardPlane"
+                                <Button Content="XZ" Tag="XZ" Padding="9,5" Margin="0,0,6,0" Click="ChooseStandardPlane"
                                     AutomationProperties.Name="XZ plane"/>
-                                <Button Content="YZ" Tag="YZ" Padding="7,5" Click="ChooseStandardPlane"
+                                <Button Content="YZ" Tag="YZ" Padding="9,5" Margin="0,0,6,0" Click="ChooseStandardPlane"
                                     AutomationProperties.Name="YZ plane"/>
                             </StackPanel>
                             <Button x:Name="CancelSurfaceButton" Content="Cancel Sketch" Background="#A63443"

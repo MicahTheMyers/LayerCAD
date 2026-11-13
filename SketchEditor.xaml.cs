@@ -461,7 +461,8 @@ public partial class SketchEditor : UserControl
                 BeginDimensions(point);
             else
                 cursorPoint = point;
-            Redraw();
+            SketchEdgeHover.Data = null;
+            DrawPlacementAnchor();
             return;
         }
 
@@ -626,7 +627,7 @@ public partial class SketchEditor : UserControl
     {
         if (orbitPoint is Point previous)
         {
-            if (!sketchOrbitMoved && (location - orbitOrigin).LengthSquared < 16)
+            if (!sketchOrbitMoved && IsSketchGestureClick(location))
                 return;
             if (orbitButton == MouseButton.Middle)
             {
@@ -649,7 +650,14 @@ public partial class SketchEditor : UserControl
             return;
         }
         UpdateCursorPreview(location);
-        UpdateSketchEdgeHover(location);
+        if (PlacementStart is null)
+            UpdateSketchEdgeHover(location);
+    }
+
+    private bool IsSketchGestureClick(Point location)
+    {
+        double threshold = orbitButton == MouseButton.Left && drawingToolActive && !awaitingDragConfirmation ? 1 : 16;
+        return (location - orbitOrigin).LengthSquared < threshold;
     }
 
     private void StartDragDrawing()
@@ -680,7 +688,26 @@ public partial class SketchEditor : UserControl
         UpdatePlacementPreview();
     }
 
-    private void UpdatePlacementPreview()
+    private void DrawPlacementAnchor()
+    {
+        if (anchor is not SketchPoint start || sketchProjection.Project(WorldPoint(start)) is not Point center)
+            return;
+        Drawing.Children.Add(new Path
+        {
+            Data = new GeometryGroup
+            {
+                Children =
+                {
+                    new LineGeometry(center - new Vector(5, 0), center + new Vector(5, 0)),
+                    new LineGeometry(center - new Vector(0, 5), center + new Vector(0, 5))
+                }
+            },
+            Stroke = Brushes.LightSkyBlue,
+            IsHitTestVisible = false
+        });
+    }
+
+    private void UpdatePlacementPreview(bool showMeasurements = true)
     {
         if (PlacementStart is not SketchPoint start || scale <= 0)
             return;
@@ -711,7 +738,8 @@ public partial class SketchEditor : UserControl
             line.Points = positions;
         else
             ((Polygon)preview).Points = positions;
-        UpdateMeasurements(ThreePointTool || tool == SketchTool.Spline ? [] : outline, closed: !open);
+        if (showMeasurements)
+            UpdateMeasurements(ThreePointTool || tool == SketchTool.Spline ? [] : outline, closed: !open);
     }
 
     private void ClearPreview(object sender, MouseEventArgs e)
@@ -881,7 +909,9 @@ public partial class SketchEditor : UserControl
 
     private void RedrawOnResize(object sender, SizeChangedEventArgs e) => Redraw();
 
-    private void Redraw()
+    private void Redraw() => RedrawSketch(navigating: false);
+
+    private void RedrawSketch(bool navigating)
     {
         double width = Drawing.ActualWidth, height = Drawing.ActualHeight;
         if (width <= 0 || height <= 0)
@@ -899,6 +929,8 @@ public partial class SketchEditor : UserControl
         var grid = new SolidColorBrush(Color.FromRgb(37, 49, 66));
         var axis = new SolidColorBrush(Color.FromRgb(91, 113, 137));
         double gridRadius = plateCorners.Select(corner => (corner - referenceOrigin).Length).DefaultIfEmpty(extent).Max() * 2;
+        if (gridRadius / gridStep > 120)
+            gridStep *= Math.Ceiling(gridRadius / (120 * gridStep));
         int gridCount = (int)Math.Ceiling(gridRadius / gridStep);
         var gridLines = new StreamGeometry();
         var axes = new StreamGeometry();
@@ -949,7 +981,8 @@ public partial class SketchEditor : UserControl
             });
         }
         bool open = drawingPolyline || openProfiles.Contains(points);
-        validOutline = !open && points.Count >= 3 && SketchGeometry.TryTriangulate(points.ToArray(), out _, out _);
+        if (!navigating)
+            validOutline = !open && points.Count >= 3 && SketchGeometry.TryTriangulate(points.ToArray(), out _, out _);
         if (!open && points.Count >= 3)
         {
             Drawing.Children.Add(new Polygon
@@ -964,32 +997,38 @@ public partial class SketchEditor : UserControl
 
         void DrawOpenPath(List<SketchPoint> path, Brush brush)
         {
-            for (int i = 1; i < path.Count; i++)
+            var geometry = new StreamGeometry();
+            using (var context = geometry.Open())
             {
-                if (sketchProjection.Segment(WorldPoint(path[i - 1]), WorldPoint(path[i])) is { } segment)
-                    DrawLine(segment.Start.X, segment.Start.Y, segment.End.X, segment.End.Y, brush);
+                for (int i = 1; i < path.Count; i++)
+                    DrawProjectedLine(path[i - 1], path[i], context);
             }
+            geometry.Freeze();
+            Drawing.Children.Add(new Path { Data = geometry, Stroke = brush, StrokeThickness = 1.5, IsHitTestVisible = false });
         }
 
-        for (int i = 0; i < points.Count; i++)
+        var markers = new GeometryGroup { FillRule = FillRule.Nonzero };
+        int selectedPoint = PointList.SelectedIndex;
+        double markerRadius = points.Count <= 24 ? 4 : 1.5;
+        if (!navigating || points.Count <= 24)
         {
-            if (sketchProjection.Project(WorldPoint(points[i])) is not Point position)
-                continue;
-            bool selected = i == PointList.SelectedIndex;
-            double size = selected || points.Count <= 24 ? 8 : 3;
-            var marker = new Ellipse { Width = size, Height = size, Fill = selected ? Brushes.White : outline };
-            Canvas.SetLeft(marker, position.X - size / 2);
-            Canvas.SetTop(marker, position.Y - size / 2);
-            Drawing.Children.Add(marker);
+            for (int i = 0; i < points.Count; i++)
+                if (i != selectedPoint && sketchProjection.Project(WorldPoint(points[i])) is Point position)
+                    markers.Children.Add(new EllipseGeometry(position, markerRadius, markerRadius));
         }
+        if (markers.Children.Count > 0)
+        {
+            markers.Freeze();
+            Drawing.Children.Add(new Path { Data = markers, Fill = outline, IsHitTestVisible = false });
+        }
+        if (selectedPoint >= 0 && selectedPoint < points.Count &&
+            sketchProjection.Project(WorldPoint(points[selectedPoint])) is Point selectedPosition)
+            Drawing.Children.Add(new Path { Data = new EllipseGeometry(selectedPosition, 4, 4), Fill = Brushes.White, IsHitTestVisible = false });
 
-        if (anchor is SketchPoint start && sketchProjection.Project(WorldPoint(start)) is Point center)
-        {
-            DrawLine(center.X - 5, center.Y, center.X + 5, center.Y, Brushes.LightSkyBlue);
-            DrawLine(center.X, center.Y - 5, center.X, center.Y + 5, Brushes.LightSkyBlue);
-        }
-        UpdateMeasurements(points, validOutline);
-        UpdatePlacementPreview();
+        DrawPlacementAnchor();
+        if (!navigating)
+            UpdateMeasurements(points, validOutline);
+        UpdatePlacementPreview(showMeasurements: !navigating);
 
         void DrawProjectedLine(SketchPoint start, SketchPoint end, StreamGeometryContext path)
         {
@@ -999,9 +1038,6 @@ public partial class SketchEditor : UserControl
             path.BeginFigure(a, isFilled: false, isClosed: false);
             path.LineTo(b, isStroked: true, isSmoothJoin: false);
         }
-
-        void DrawLine(double x1, double y1, double x2, double y2, Brush stroke) =>
-            Drawing.Children.Add(new Line { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Stroke = stroke });
     }
 
     private void Finish(object sender, RoutedEventArgs e)
