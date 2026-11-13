@@ -910,6 +910,19 @@ public partial class MainWindow : Window
 
     private void DrawScene()
     {
+        bool extrudeActive = choosingExtrudeFace || featureExtrusion is not null ||
+            featureSource?.Kind == PartKind.Sketch && !featureMove;
+        if (extrudeActive)
+        {
+            ExtrudeButton.Background = (Brush)FindResource("Accent");
+            ExtrudeButton.BorderBrush = Brushes.LightSkyBlue;
+        }
+        else
+        {
+            ExtrudeButton.ClearValue(Control.BackgroundProperty);
+            ExtrudeButton.ClearValue(Control.BorderBrushProperty);
+        }
+        System.Windows.Automation.AutomationProperties.SetItemStatus(ExtrudeButton, extrudeActive ? "Active" : "");
         pickableParts.Clear();
         previewTranslations.Clear();
         ResetSurfaceHover();

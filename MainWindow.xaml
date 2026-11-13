@@ -183,7 +183,7 @@
                                                 StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                                         </Grid>
                                     </Button>
-                                    <Button Style="{StaticResource RibbonTool}" Click="BeginFaceExtrude" ToolTip="Extrude (Ctrl+E)"
+                                    <Button x:Name="ExtrudeButton" Style="{StaticResource RibbonTool}" Click="BeginFaceExtrude" ToolTip="Extrude (Ctrl+E)"
                                         AutomationProperties.Name="Extrude">
                                         <Grid Width="30" Height="30">
                                             <Path Data="M 3,13 L 13,8 L 23,13 V 23 L 13,28 L 3,23 Z" Fill="#548DB4" Stretch="None"/>
