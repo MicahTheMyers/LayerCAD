@@ -279,7 +279,7 @@ public partial class MainWindow : Window
             CancelBuildFeature(sender, e);
             e.Handled = true;
         }
-        else if (e.Key == Key.Escape && (lassoSelection.Count > 0 || selectedFaces.Count > 0))
+        else if (e.Key == Key.Escape && (lassoSelection.Count > 0 || selectedFaces.Count > 0 || Selected is not null))
         {
             SetLassoSelection([], extend: false);
             e.Handled = true;
@@ -526,6 +526,8 @@ public partial class MainWindow : Window
         sketchProfileSelection = null;
         var visible = parts.Where(part => !part.Hidden).ToHashSet<Part>(ReferenceEqualityComparer.Instance);
         lassoSelection.IntersectWith(visible);
+        foreach (var sketch in regionSketchSelections.Keys.Where(sketch => !visible.Contains(sketch)).ToArray())
+            regionSketchSelections.Remove(sketch);
         selectedEdges.RemoveWhere(item => !visible.Contains(item.Part));
         selectedCorners.RemoveWhere(item => !visible.Contains(item.Part));
         if (selectedFaces.RemoveAll(item => !parts.Any(part => ReferenceEquals(part, item.Surface.Part) && !part.Hidden)) > 0)
@@ -590,7 +592,10 @@ public partial class MainWindow : Window
         if (!changingViewportSelection && (Selected is not { } selected || !lassoSelection.Contains(selected)))
             lassoSelection.Clear();
         if (!changingViewportSelection)
+        {
             ClearSolidDetail();
+            regionSketchSelections.Clear();
+        }
         if (featureSource is not null && !ReferenceEquals(featureSource, Selected))
             EndBuildFeature();
         partPopupDismissed = false;
@@ -914,7 +919,10 @@ public partial class MainWindow : Window
             if (featureChange?.MovedParts?.TryGetValue(part, out var moved) == true)
                 displayed = moved;
             bool sketch = displayed.Kind == PartKind.Sketch;
-            Color color = sketch ? Color.FromArgb(selected ? (byte)168 : (byte)110, 71, 218, 184) : displayed.Fits(bed)
+            bool wholeSketchSelected = selected && !regionSketchSelections.ContainsKey(part) &&
+                (lassoSelection.Contains(part) || sketchProfileSelection is null || part.AdditionalProfiles is null);
+            Color color = sketch ? wholeSketchSelected
+                ? Color.FromArgb(168, 255, 173, 92) : Color.FromArgb(110, 71, 218, 184) : displayed.Fits(bed)
                 ? selected ? Color.FromRgb(250, 251, 253) : Color.FromRgb(228, 231, 237)
                 : Color.FromRgb(252, 212, 187);
             if (selected && !sketch && !SelectingSurface)

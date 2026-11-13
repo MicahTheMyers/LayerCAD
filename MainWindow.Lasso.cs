@@ -89,13 +89,47 @@ public partial class MainWindow
     private void SelectRegion(IReadOnlyList<Point> points, bool extend, bool enclose)
     {
         var lasso = ViewportSelection.Geometry(points);
+        if (!extend)
+            regionSketchSelections.Clear();
+        bool toggle = extend && Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        var sketchOwners = new HashSet<Part>(ReferenceEqualityComparer.Instance);
+        foreach (var (sketch, mesh) in pickableParts.Values.Where(entry => entry.Part.Kind == PartKind.Sketch))
+        {
+            var hits = SketchDrawingRanges(sketch)
+                .Where(drawing =>
+                {
+                    var triangles = mesh.GetRange(drawing.Start, drawing.Count);
+                    return enclose ? EnclosesPart(triangles, lasso) : triangles.Any(triangle => TriangleOverlaps(lasso, triangle));
+                })
+                .Select(drawing => drawing.Index).ToArray();
+            if (hits.Length == 0)
+                continue;
+            if (!regionSketchSelections.TryGetValue(sketch, out var selected))
+            {
+                selected = lassoSelection.Contains(sketch) && extend
+                    ? SketchDrawingRanges(sketch).Select(drawing => drawing.Index).ToHashSet() : [];
+                regionSketchSelections.Add(sketch, selected);
+            }
+            if (toggle)
+                selected.SymmetricExceptWith(hits);
+            else
+                selected.UnionWith(hits);
+            if (selected.Count > 0)
+                sketchOwners.Add(sketch);
+            else
+            {
+                regionSketchSelections.Remove(sketch);
+                lassoSelection.Remove(sketch);
+            }
+        }
         var selection = pickableParts.Values
+            .Where(entry => entry.Part.Kind != PartKind.Sketch)
             .Where(entry => enclose ? EnclosesPart(entry.Triangles, lasso) :
                 IntersectsLasso(entry.Part, entry.Triangles, lasso))
             .Select(entry => entry.Part).ToArray();
         if (extend && lassoSelection.Count == 0 && Selected is { Hidden: false } current)
             lassoSelection.Add(current);
-        if (extend && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        if (toggle)
         {
             lassoSelection.SymmetricExceptWith(selection);
             var removed = selection.Where(part => !lassoSelection.Contains(part)).ToHashSet<Part>(ReferenceEqualityComparer.Instance);
@@ -104,6 +138,7 @@ public partial class MainWindow
             selectedCorners.RemoveWhere(item => removed.Contains(item.Part));
             selection = lassoSelection.ToArray();
         }
+        selection = selection.Concat(sketchOwners).ToArray();
         SetLassoSelection(selection, extend, preserveFaces: true);
         SelectFacesInRegion(lasso, extend);
     }
@@ -124,9 +159,13 @@ public partial class MainWindow
             TogglePartSelection(sketch, toggle: Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
             return;
         }
-        bool redraw = !extend && lassoSelection.Count > 0;
+        bool redraw = !extend && (lassoSelection.Count > 0 || regionSketchSelections.Count > 0 ||
+            hit is not null && pickableParts[hit.ModelHit].Part.Kind == PartKind.Sketch);
         if (!extend)
+        {
             lassoSelection.Clear();
+            regionSketchSelections.Clear();
+        }
         changingViewportSelection = extend;
         try
         {
@@ -148,6 +187,7 @@ public partial class MainWindow
 
     private void TogglePartSelection(Part part, bool toggle = true)
     {
+        regionSketchSelections.Remove(part);
         if (lassoSelection.Count == 0 && Selected is { Hidden: false } previous &&
             selectedFaces.Count == 0 && selectedEdges.Count == 0 && selectedCorners.Count == 0)
             lassoSelection.Add(previous);
@@ -223,7 +263,10 @@ public partial class MainWindow
     private void SetLassoSelection(Part[] selection, bool extend, bool preserveFaces = false)
     {
         if (!preserveFaces)
+        {
             ClearSolidDetail();
+            regionSketchSelections.Clear();
+        }
         sketchProfileSelection = null;
         if (!extend)
             lassoSelection.Clear();
