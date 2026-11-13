@@ -42,9 +42,24 @@ public partial class MainWindow
     {
         EndBuildFeature();
         EndSurfaceSelection();
+        var targets = SelectedExtrusionTargets();
+        if (targets.Length > 1)
+        {
+            batchExtrusionTargets = targets;
+            var first = targets[0];
+            OpenBuildFeature(first.Part, first.Face, first.Face is null ? 10 : 5);
+            return;
+        }
+        if (targets.Length == 1)
+        {
+            var target = targets[0];
+            OpenBuildFeature(target.Part, target.Face, target.Face is null ? 10 : 5, profileIndex: target.Profile);
+            return;
+        }
         if (Selected is { Kind: PartKind.Sketch } sketch)
         {
-            if (sketch.Profile is null || sketchProfileSelection is { Index: < 0 } selected && ReferenceEquals(selected.Sketch, sketch))
+            if (sketch.Profile is null || regionSketchSelections.ContainsKey(sketch) ||
+                sketchProfileSelection is { Index: < 0 } selected && ReferenceEquals(selected.Sketch, sketch))
             {
                 SetStatus("Select a closed sketch profile to extrude.");
                 return;
@@ -290,7 +305,8 @@ public partial class MainWindow
         ContinueBevel.IsChecked = false;
         ContinueBevel.Visibility = SelectingBevel && (part.BevelBox() is not null || PolygonBevel.Create(part) is not null)
             ? Visibility.Visible : Visibility.Collapsed;
-        ExtrudeProfileOptions.Visibility = part.AdditionalProfiles is not null ? Visibility.Visible : Visibility.Collapsed;
+        ExtrudeProfileOptions.Visibility = part.AdditionalProfiles is not null && batchExtrusionTargets.Length == 0
+            ? Visibility.Visible : Visibility.Collapsed;
         if (part.AdditionalProfiles is { } additional)
         {
             ExtrudeProfileChoice.ItemsSource = Enumerable.Range(1, additional.Length + 1).Select(number => $"Profile {number}").ToArray();
@@ -331,6 +347,7 @@ public partial class MainWindow
             HoleSeatDiameter.Text = units.Format(Math.Min(hole.Clearance * 1.5, initialFeatureAmount * 1.75));
         }
         AddMaterial.IsChecked = true;
+        UpdateBatchExtrusionOptions();
         if (thread is not null)
             UpdateThreadSizeFields();
         else
@@ -468,12 +485,12 @@ public partial class MainWindow
         return new BuildChange(moved[source], [], false, MovedParts: moved);
     }
 
-    private BuildChange? PreviewSketchExtrusion(Part sketch, double amount)
+    private BuildChange? PreviewSketchExtrusion(Part sketch, double amount, int? selectedProfile = null)
     {
         string name = sketch.Name.StartsWith("Sketch ", StringComparison.Ordinal) &&
                       int.TryParse(sketch.Name.AsSpan("Sketch ".Length), out _)
             ? NextPartName(PartKind.Extrusion) : sketch.Name;
-        int profileIndex = sketch.AdditionalProfiles is null ? 0 : Math.Max(0, ExtrudeProfileChoice.SelectedIndex);
+        int profileIndex = selectedProfile ?? (sketch.AdditionalProfiles is null ? 0 : Math.Max(0, ExtrudeProfileChoice.SelectedIndex));
         var profile = sketch.SketchProfiles.ElementAt(profileIndex);
         var solid = sketch with
         {
@@ -734,6 +751,13 @@ public partial class MainWindow
         string name = featureMove ? "Move" : featureThread is not null ? "Thread" :
             featureHole is not null ? "Hole" : SelectingBevel ? "Bevel" : change.Removes ? "Extrusion cut" : "Extrusion";
         var original = featureSource;
+        if (batchExtrusionTargets.Length > 0)
+        {
+            var results = batchExtrusionResults;
+            EndBuildFeature();
+            ApplyBatchExtrusion(results);
+            return;
+        }
         EndBuildFeature();
         if (change.CutParts is not null || change.MergedParts is not null)
         {
@@ -796,6 +820,9 @@ public partial class MainWindow
         featureMove = false;
         moveSources = [];
         featureChange = null;
+        batchExtrusionTargets = [];
+        batchExtrusionResults = [];
+        UpdateBatchExtrusionOptions();
         bevelTargets.Clear();
         UpdateHistoryButtons();
         FeaturePanel.Visibility = Visibility.Collapsed;

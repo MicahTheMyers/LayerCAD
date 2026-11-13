@@ -28,7 +28,7 @@ public partial class MainWindow
         SketchProfileHighlight.Content = null;
         if (SelectingSurface)
             return;
-        if (regionSketchSelections.Count > 0 && featureSource is null)
+        if (regionSketchSelections.Count > 0 && (featureSource is null || batchExtrusionTargets.Length > 0))
         {
             var group = new Model3DGroup();
             foreach (var (owner, mesh) in pickableParts.Values)

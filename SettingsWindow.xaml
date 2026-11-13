@@ -56,6 +56,9 @@
         </UniformGrid>
         <TextBlock Text="STL files are imported and exported in millimeters." Style="{StaticResource Muted}"
                    TextWrapping="Wrap" Margin="0,2,0,12"/>
+        <CheckBox x:Name="SoftwareViewport" Content="Use software rendering for this session"
+                  ToolTip="Try this if the viewport shows dark blocks or breaks during rotation."
+                  Foreground="#E7EDF6" Margin="0,0,0,12"/>
         <TextBlock x:Name="Feedback" Foreground="#FFC39E" TextWrapping="Wrap" Visibility="Collapsed"
                    Margin="0,0,0,12" AutomationProperties.LiveSetting="Polite"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

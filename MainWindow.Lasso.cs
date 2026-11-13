@@ -156,7 +156,35 @@ public partial class MainWindow
         var hit = HitScene(point).Part ?? SketchBoundaryHit(point);
         if (extend && hit is not null && pickableParts[hit.ModelHit].Part is { Kind: PartKind.Sketch } sketch)
         {
-            TogglePartSelection(sketch, toggle: Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+            var drawing = SketchDrawingRanges(sketch).FirstOrDefault(range =>
+                hit.TriangleIndex >= range.Start && hit.TriangleIndex < range.Start + range.Count);
+            if (drawing.Count == 0)
+            {
+                TogglePartSelection(sketch, toggle: Keyboard.Modifiers.HasFlag(ModifierKeys.Control));
+                return;
+            }
+            if (lassoSelection.Count == 0 && Selected is { Hidden: false } previous)
+            {
+                lassoSelection.Add(previous);
+                if (sketchProfileSelection is { Index: >= 0 } picked && ReferenceEquals(picked.Sketch, previous))
+                    regionSketchSelections[previous] = [picked.Index];
+            }
+            if (!regionSketchSelections.TryGetValue(sketch, out var drawings))
+            {
+                drawings = lassoSelection.Contains(sketch)
+                    ? SketchDrawingRanges(sketch).Select(range => range.Index).ToHashSet() : [];
+                regionSketchSelections.Add(sketch, drawings);
+            }
+            if (!drawings.Add(drawing.Index) && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                drawings.Remove(drawing.Index);
+            if (drawings.Count == 0)
+            {
+                regionSketchSelections.Remove(sketch);
+                lassoSelection.Remove(sketch);
+            }
+            else
+                lassoSelection.Add(sketch);
+            SetLassoSelection(lassoSelection.ToArray(), extend: false, preserveFaces: true);
             return;
         }
         bool redraw = !extend && (lassoSelection.Count > 0 || regionSketchSelections.Count > 0 ||

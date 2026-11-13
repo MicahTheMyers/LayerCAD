@@ -11,6 +11,8 @@ public partial class MainWindow
     private BuildChange? PreviewExtrusion(Part source, double amount, bool remove, bool merge)
     {
         extrusionFeedback = null;
+        if (batchExtrusionTargets.Length > 0)
+            return PreviewBatchExtrusion(amount);
         var change = source.Kind == PartKind.Sketch ? PreviewSketchExtrusion(source, amount) :
             remove ? featureExtrusion?.PreviewThroughCut(amount) : featureExtrusion?.Preview(amount, remove: false);
         if (change is null || !remove && !merge)

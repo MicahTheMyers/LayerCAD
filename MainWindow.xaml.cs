@@ -844,9 +844,20 @@ public partial class MainWindow : Window
     private void OpenSettings(object sender, RoutedEventArgs e)
     {
         EndBuildFeature();
-        var dialog = new SettingsWindow(bed, units) { Owner = this };
+        var source = PresentationSource.FromVisual(this) as System.Windows.Interop.HwndSource;
+        var target = source?.CompositionTarget;
+        var dialog = new SettingsWindow(bed, units)
+        {
+            Owner = this,
+            UseSoftwareRendering = target?.RenderMode == System.Windows.Interop.RenderMode.SoftwareOnly
+        };
         if (dialog.ShowDialog() == true)
+        {
+            if (target is not null)
+                target.RenderMode = dialog.UseSoftwareRendering
+                    ? System.Windows.Interop.RenderMode.SoftwareOnly : System.Windows.Interop.RenderMode.Default;
             ApplySettings(dialog.BuildVolume, dialog.Units);
+        }
     }
 
     private void ApplySettings(Bed volume, DisplayUnits displayUnits)
@@ -1609,7 +1620,7 @@ public partial class MainWindow : Window
                 PickSketchSurface(point, commit: true);
             else if (SelectingBevel)
                 PickBevelTarget(point, commit: true);
-            else if (featureSource is { Kind: PartKind.Sketch, AdditionalProfiles: not null } sketch &&
+            else if (batchExtrusionTargets.Length == 0 && featureSource is { Kind: PartKind.Sketch, AdditionalProfiles: not null } sketch &&
                      HitSceneCore(point, includeSketches: true, onlySketch: sketch).Part is { } profileHit)
             {
                 int profile = sketch.SketchProfileRange(profileHit.TriangleIndex).Index;

@@ -10,6 +10,7 @@ public partial class SettingsWindow : Window
 
     public DisplayUnits Units { get; private set; }
     public Bed BuildVolume { get; private set; }
+    public bool UseSoftwareRendering { get => SoftwareViewport.IsChecked == true; set => SoftwareViewport.IsChecked = value; }
 
     public SettingsWindow(Bed bed, DisplayUnits units)
     {
