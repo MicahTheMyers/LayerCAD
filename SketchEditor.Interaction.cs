@@ -413,9 +413,7 @@ public partial class SketchEditor
         {
             if (drawingPolyline)
                 StopPolyline();
-            else if (trimming)
-                EnterSketchSelection();
-            else if (!drawingToolActive)
+            else
                 ShowDrawingMenu(location);
         }
         return true;

@@ -1249,16 +1249,30 @@ public partial class MainWindow : Window
 
     private ContextMenu? ShowViewportPartMenu(Point point)
     {
-        if (SelectingSurface || (HitSceneCore(point, includeSketches: false).Part ?? HitScene(point).Part) is not { } hit)
-            return null;
+        var menu = new ContextMenu { PlacementTarget = OrbitSurface, Placement = PlacementMode.MousePoint };
+        if (SelectingSurface || featureSource is not null)
+        {
+            if (featureSource is not null)
+                AddContextCommand(menu, "_Apply", ApplyBuildFeature, ApplyFeatureButton.IsEnabled, "Enter");
+            AddContextCommand(menu, "_Cancel", SelectingSurface ? CancelSurfaceSelection : CancelBuildFeature, gesture: "Esc");
+            menu.IsOpen = true;
+            return menu;
+        }
+        var hit = HitScene(point).Part ?? SketchBoundaryHit(point);
+        if (hit is null)
+        {
+            AddViewportCommands(menu, null);
+            menu.IsOpen = true;
+            return menu;
+        }
         ResetSurfaceHover();
-        ClearSolidDetail();
         var part = pickableParts[hit.ModelHit].Part;
-        PartList.SelectedItem = part;
-        var menu = new ContextMenu { PlacementTarget = OrbitSurface, Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
+        bool grouped = lassoSelection.Contains(part) && (lassoSelection.Count > 1 || regionSketchSelections.ContainsKey(part));
+        if (!grouped)
+            PickViewportSelection(point, extend: false);
         var move = new MenuItem { Header = "_Move…" };
         var delete = new MenuItem { Header = "_Delete" };
-        if (part.AdditionalProfiles is not null && part.SketchProfileRange(hit.TriangleIndex).Index >= 0)
+        if (!grouped && part.AdditionalProfiles is not null && part.SketchProfileRange(hit.TriangleIndex).Index >= 0)
         {
             int index = part.SketchProfileRange(hit.TriangleIndex).Index;
             sketchProfileSelection = (part, index);
@@ -1270,13 +1284,64 @@ public partial class MainWindow : Window
         }
         else
         {
-            move.Click += MovePartFromMenu;
-            delete.Click += DeletePart;
+            move.Click += grouped ? BeginMove : MovePartFromMenu;
+            if (grouped)
+                delete.Click += (_, _) => DeleteParts(lassoSelection.ToHashSet<Part>(ReferenceEqualityComparer.Instance));
+            else
+                delete.Click += DeletePart;
         }
         menu.Items.Add(move);
         menu.Items.Add(delete);
+        menu.Items.Add(new Separator());
+        AddViewportCommands(menu, hit.PointHit);
         menu.IsOpen = true;
         return menu;
+    }
+
+    internal static void AddContextCommand(ItemsControl menu, string header, RoutedEventHandler handler,
+        bool enabled = true, string gesture = "")
+    {
+        var item = new MenuItem { Header = header, IsEnabled = enabled, InputGestureText = gesture };
+        item.Click += handler;
+        menu.Items.Add(item);
+    }
+
+    private void AddViewportCommands(ContextMenu menu, Point3D? orbitCenter)
+    {
+        AddContextCommand(menu, "Create _Sketch", CreateSketch);
+        AddContextCommand(menu, "_Edit Sketch…", EditSketch, Selected?.Kind is PartKind.Sketch or PartKind.Extrusion);
+        AddContextCommand(menu, "_Extrude / Press Pull…", BeginFaceExtrude, gesture: "Ctrl+E");
+        AddContextCommand(menu, "_Hole…", BeginHole);
+        AddContextCommand(menu, "_Bevel…", BeginBevel, gesture: "Ctrl+B");
+        AddContextCommand(menu, "_Measure", BeginMeasure);
+        menu.Items.Add(new Separator());
+        AddContextCommand(menu, "_Undo", UndoProject, UndoButton.IsEnabled, "Ctrl+Z");
+        AddContextCommand(menu, "_Redo", RedoProject, RedoButton.IsEnabled, "Ctrl+Y");
+        menu.Items.Add(new Separator());
+        AddContextCommand(menu, "_Hide Selected", (_, _) => ChangeViewportVisibility(showAll: false), Selected is { Hidden: false });
+        AddContextCommand(menu, "Show _All", (_, _) => ChangeViewportVisibility(showAll: true), parts.Any(part => part.Hidden));
+        AddContextCommand(menu, "_Fit View", (_, _) => FitBuildView(), gesture: "F6");
+        if (orbitCenter is Point3D center)
+            AddContextCommand(menu, "Set _Orbit Center", (_, _) =>
+            {
+                cameraPan = (Vector3D)center;
+                PositionCamera();
+            });
+        AddContextCommand(menu, "_Reset View", ResetView);
+    }
+
+    private void ChangeViewportVisibility(bool showAll)
+    {
+        int selectedIndex = SelectedPartIndex;
+        for (int index = 0; index < parts.Count; index++)
+        {
+            var part = parts[index];
+            if (showAll ? part.Hidden : !part.Hidden && (ReferenceEquals(part, Selected) || lassoSelection.Contains(part)))
+                parts[index] = part with { Hidden = !showAll };
+        }
+        MarkDirty();
+        RefreshParts(selectedIndex);
+        SetStatus(showAll ? "Showed all objects and sketches." : "Hid selected objects and sketches.");
     }
 
     private static SketchSurface? FindSketchableFace(Part part, List<Triangle> triangles, SceneHit hit)

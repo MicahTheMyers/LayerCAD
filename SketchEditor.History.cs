@@ -114,21 +114,37 @@ public partial class SketchEditor
 
     private ContextMenu? ShowDrawingMenu(Point point)
     {
-        if (moveOriginal is not null || PlacementStart is not null)
-            return null;
         var target = profiles.LastOrDefault(profile => DrawingContains(profile, point));
-        if (target is null)
-            return null;
-        if (!selectedDrawings.Contains(target))
+        bool active = moveOriginal is not null || drawingToolActive || trimming;
+        if (!active && target is not null && !selectedDrawings.Contains(target))
             SetDrawingSelection([target], extend: false, toggle: false);
         var targets = profiles.Where(selectedDrawings.Contains).ToArray();
         var menu = new ContextMenu { PlacementTarget = Drawing, Placement = PlacementMode.MousePoint };
-        var move = new MenuItem { Header = "_Move drawing…" };
-        move.Click += (_, _) => StartSketchMove(targets);
-        var delete = new MenuItem { Header = "_Delete drawing" };
-        delete.Click += (_, _) => DeleteProfiles(targets);
-        menu.Items.Add(move);
-        menu.Items.Add(delete);
+        if (active)
+        {
+            MainWindow.AddContextCommand(menu, "_Cancel Tool", (_, _) =>
+            {
+                EndSketchMove(commit: false);
+                EnterSketchSelection();
+            }, gesture: "Esc");
+        }
+        else if (targets.Length > 0)
+        {
+            MainWindow.AddContextCommand(menu, "_Move Drawings…", (_, _) => StartSketchMove(targets));
+            MainWindow.AddContextCommand(menu, "_Delete Drawings", (_, _) => DeleteProfiles(targets), gesture: "Backspace");
+        }
+        MainWindow.AddContextCommand(menu, "_Finish Sketch", Finish, FinishButton.IsEnabled);
+        MainWindow.AddContextCommand(menu, "_Undo", UndoSketch, UndoSketchButton.IsEnabled, "Ctrl+Z");
+        MainWindow.AddContextCommand(menu, "_Redo", RedoSketch, RedoSketchButton.IsEnabled, "Ctrl+Y");
+        menu.Items.Add(new Separator());
+        MainWindow.AddContextCommand(menu, "_Line", (_, _) => SelectDefaultTool(PolylineButton, new RoutedEventArgs()), gesture: "L");
+        MainWindow.AddContextCommand(menu, "_Rectangle", (_, _) => SelectDefaultTool(RectangleButton, new RoutedEventArgs()), gesture: "R");
+        MainWindow.AddContextCommand(menu, "_Circle", (_, _) => SelectDefaultTool(CircleButton, new RoutedEventArgs()), gesture: "C");
+        MainWindow.AddContextCommand(menu, "_Trim", BeginSketchTrim, gesture: "T");
+        MainWindow.AddContextCommand(menu, "_Offset…", BeginSketchOffset, gesture: "O");
+        menu.Items.Add(new Separator());
+        MainWindow.AddContextCommand(menu, "_Fit View", (_, _) => FitSketchView(), gesture: "F6");
+        MainWindow.AddContextCommand(menu, "_Reset View", ResetOrbit);
         menu.IsOpen = true;
         return menu;
     }
