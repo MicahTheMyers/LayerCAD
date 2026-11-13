@@ -77,6 +77,8 @@ Use **Ctrl+A** to select visible items and planar faces in Build Mode, or all co
 
 In Build Mode, use **Ctrl+E** for Extrude and **Ctrl+B** for Bevel.
 
+Use **Sketch → Modify → Profile Dimensions** to save the dimensions of a closed profile. Choose **Center on sketch origin** to keep the outline centered. **Follow profile size** moves enclosed sketch circles proportionally as the outline is resized and preserves their diameters. Finish the sketch to rebuild linked extrusions.
+
 ## Build from source
 
 Install the .NET 8 SDK on Windows, then run these commands from the project directory.
@@ -94,7 +96,7 @@ For a release shared between computers, increment `Version` in `LayerCAD.csproj`
 
 The portable Windows x64 executable checks GitHub Releases at startup. Use **File → Check for Updates** to check again. When you approve an update, LayerCAD verifies the release asset's SHA-256 digest, prompts for unsaved project changes, replaces the executable, and relaunches. The previous executable remains alongside it as `.previous`.
 
-Push a tag such as `v1.0.15` to run the Windows release workflow. The workflow publishes a self-contained executable and the third-party notices.
+Increment `Version` in `LayerCAD.csproj` and push to `main` to publish a new Windows release automatically. The workflow also accepts explicit version tags. It skips versions that already have a release.
 
 The Windows x64 solid geometry library is built from [Manifold 3.5.4](https://github.com/elalish/manifold/releases/tag/v3.5.4). To rebuild it, pass the path to the extracted source and the path to Zig `0.14.0-dev.2456` to `Native/Build-Manifold.ps1` using `-ManifoldSource` and `-Zig`.
 

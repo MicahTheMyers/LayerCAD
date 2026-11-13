@@ -66,6 +66,15 @@ public partial class SketchEditor
 
         if (!profiles.Contains(points))
             return false;
+        if (profileDimensions.TryGetValue(points, out var parameters))
+        {
+            bool round = IsCircularProfile(points);
+            return SetProfileDimensions(parameters with
+            {
+                Width = width || round ? length : parameters.Width,
+                Height = !width || round ? length : parameters.Height
+            });
+        }
         double minX = points.Min(point => point.X), minY = points.Min(point => point.Y);
         double factor = length / previous;
         bool circle = IsCircularProfile(points);

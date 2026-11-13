@@ -302,6 +302,8 @@
                                                 <MenuItem Header="Offset…" Click="BeginSketchOffset"/>
                                                 <MenuItem Header="Sketch Fillet…" Click="BeginSketchFillet"/>
                                                 <MenuItem Header="Sketch Scale…" Click="BeginSketchScale"/>
+                                                <MenuItem Header="Profile Dimensions…" Click="EditProfileDimensions"/>
+                                                <MenuItem Header="Clear Profile Dimensions" Click="ClearProfileDimensions"/>
                                                 <MenuItem Header="Equal Distance Chamfer…" Click="BeginSketchChamfer"/>
                                             </ContextMenu>
                                         </Button.ContextMenu>

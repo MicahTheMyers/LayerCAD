@@ -142,6 +142,7 @@ public partial class SketchEditor
         int index = profiles.IndexOf(profile);
         profiles.RemoveAt(index);
         originalProfiles.Remove(profile);
+        profileDimensions.Remove(profile);
         openProfiles.Remove(profile);
         foreach (var piece in remaining)
         {

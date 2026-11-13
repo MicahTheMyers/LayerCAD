@@ -2,32 +2,55 @@ name: Windows release
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   publish:
+    concurrency:
+      group: layercad-windows-release
+      cancel-in-progress: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Build portable executable
-        shell: pwsh
-        run: |
-          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') { throw 'Use a vMAJOR.MINOR.PATCH tag.' }
-          $version = $env:GITHUB_REF_NAME.Substring(1)
-          dotnet publish LayerCAD.csproj -c Release -r win-x64 --self-contained true -p:Version=$version -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -p:DebugType=None -o bin/release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Rename-Item bin/release/LayerCAD.exe "LayerCAD-$version-win-x64.exe"
-      - name: Publish release
+      - name: Resolve release version
+        id: version
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
-          gh release create $env:GITHUB_REF_NAME "bin/release/LayerCAD-$version-win-x64.exe" "bin/release/THIRD-PARTY-Manifold.txt" "bin/release/THIRD-PARTY-LibTessDotNet.txt" --verify-tag --generate-notes
+          $version = ([xml](Get-Content -Raw LayerCAD.csproj)).Project.PropertyGroup.Version
+          if ($env:GITHUB_REF_TYPE -eq 'tag') { $version = $env:GITHUB_REF_NAME.Substring(1) }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Use a MAJOR.MINOR.PATCH version.' }
+          "number=$version" >> $env:GITHUB_OUTPUT
+          gh release view "v$version" --json tagName 2>$null | Out-Null
+          $exists = $LASTEXITCODE -eq 0
+          "exists=$($exists.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          exit 0
+      - name: Build portable executable
+        if: steps.version.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          $version = $env:RELEASE_VERSION
+          dotnet publish LayerCAD.csproj -c Release -r win-x64 --self-contained true -p:Version=$version -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -p:DebugType=None -o bin/release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Rename-Item bin/release/LayerCAD.exe "LayerCAD-$version-win-x64.exe"
+      - name: Publish release
+        if: steps.version.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          $version = $env:RELEASE_VERSION
+          gh release create "v$version" "bin/release/LayerCAD-$version-win-x64.exe" "bin/release/THIRD-PARTY-Manifold.txt" "bin/release/THIRD-PARTY-LibTessDotNet.txt" --target $env:GITHUB_SHA --generate-notes
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

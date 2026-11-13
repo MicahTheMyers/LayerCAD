@@ -90,7 +90,9 @@ public sealed record Part(PartKind Kind, string Name, double Width, double Depth
                           [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
                           int SketchProfileIndex = 0,
                           [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-                          SketchPoint[][]? OpenPaths = null)
+                          SketchPoint[][]? OpenPaths = null,
+                          [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+                          ProfileDimensions?[]? Dimensions = null)
 {
     [JsonIgnore]
     internal IEnumerable<SketchPoint[]> SketchProfiles => Profile is null ? [] : new[] { Profile }.Concat(AdditionalProfiles ?? []);
@@ -124,6 +126,9 @@ public sealed record Part(PartKind Kind, string Name, double Width, double Depth
         (OpenPaths is null || Kind == PartKind.Sketch && OpenPaths.Length > 0 &&
             OpenPaths.Length + (AdditionalProfiles?.Length ?? 0) + (Profile is null ? 0 : 1) <= 64 &&
             OpenPaths.All(SketchGeometry.ValidOpenPath)) &&
+        (Dimensions is null || Kind is PartKind.Sketch or PartKind.Extrusion &&
+            Dimensions.Length == SketchProfiles.Count() && Dimensions.Any(item => item is not null) &&
+            Dimensions.All(item => item is null || item.IsValid())) &&
         ValidOffset(X) && ValidOffset(Y) && ValidOffset(Z) &&
         (Bevel == 0 || ValidBevel(Bevel)) &&
         (BevelCuts is null || (BevelCuts.Length > 0 &&
@@ -240,7 +245,7 @@ public sealed record Bed(double X, double Y, double Z)
 
 public sealed record Project(int Version, Bed Bed, Part[] Parts)
 {
-    public bool IsValid() => Version is >= 1 and <= 19 && Bed is not null && Bed.IsValid() &&
+    public bool IsValid() => Version is >= 1 and <= 20 && Bed is not null && Bed.IsValid() &&
         Parts is not null && Parts.All(part => part is not null && part.IsValid() &&
             (Version >= 2 || part.Kind != PartKind.Extrusion) &&
             (Version >= 3 || part.Plane == SketchPlane.XY) &&
@@ -261,7 +266,8 @@ public sealed record Project(int Version, Bed Bed, Part[] Parts)
             (Version >= 16 || !part.NeedsExtendedBevelVersion) &&
             (Version >= 17 || part.OpenPaths is null && part.Holes?.Select(hole => hole.Axis).Distinct().Count() is not > 1) &&
             (Version >= 18 || part.BevelCuts?.Any(cut => cut.Target.ProfileKind != ProfileBevelKind.None) != true) &&
-            (Version >= 19 || part.Holes?.Any(hole => hole.Seat is not null) != true)) && ValidSketchLinks();
+            (Version >= 19 || part.Holes?.Any(hole => hole.Seat is not null) != true) &&
+            (Version >= 20 || part.Dimensions is null)) && ValidSketchLinks();
 
     private bool ValidSketchLinks()
     {

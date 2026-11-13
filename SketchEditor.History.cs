@@ -8,7 +8,7 @@ namespace LayerCAD;
 
 public partial class SketchEditor
 {
-    private sealed record SavedProfile(SketchPoint[] Points, int OriginalIndex, bool Open);
+    private sealed record SavedProfile(SketchPoint[] Points, int OriginalIndex, bool Open, ProfileDimensions? Dimensions);
     private sealed record SketchState(SavedProfile[] Profiles, int ActiveIndex);
     private readonly Dictionary<List<SketchPoint>, int> originalProfiles = new();
     private readonly EditHistory<SketchState> sketchHistory = new();
@@ -20,7 +20,8 @@ public partial class SketchEditor
         .Select(profile => originalProfiles.GetValueOrDefault(profile, -1)).ToArray();
 
     private SketchState CaptureSketch() => new(profiles.Select(profile =>
-        new SavedProfile(profile.ToArray(), originalProfiles.GetValueOrDefault(profile, -1), openProfiles.Contains(profile))).ToArray(), profiles.IndexOf(points));
+        new SavedProfile(profile.ToArray(), originalProfiles.GetValueOrDefault(profile, -1), openProfiles.Contains(profile),
+            profileDimensions.GetValueOrDefault(profile))).ToArray(), profiles.IndexOf(points));
 
     private void RecordSketchEdit(SketchState state)
     {
@@ -62,10 +63,13 @@ public partial class SketchEditor
         profiles.Clear();
         openProfiles.Clear();
         originalProfiles.Clear();
+        profileDimensions.Clear();
         foreach (var saved in state.Profiles)
         {
             var outline = saved.Points.ToList();
             profiles.Add(outline);
+            if (saved.Dimensions is { } dimensions)
+                profileDimensions.Add(outline, dimensions);
             if (saved.Open)
                 openProfiles.Add(outline);
             if (saved.OriginalIndex >= 0)
@@ -156,6 +160,7 @@ public partial class SketchEditor
             profiles.Remove(target);
             openProfiles.Remove(target);
             originalProfiles.Remove(target);
+            profileDimensions.Remove(target);
         }
         points = profiles.LastOrDefault() ?? [];
         RecordSketchEdit(before);

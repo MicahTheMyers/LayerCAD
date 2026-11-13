@@ -59,7 +59,11 @@ public partial class SketchEditor : UserControl
         orbitQueue = new ViewportOrbitQueue(DragSketchCameraBy);
         profiles = part?.SketchProfiles.Select(profile => profile.ToList()).ToList() ?? [];
         for (int i = 0; i < profiles.Count; i++)
+        {
             originalProfiles.Add(profiles[i], i);
+            if (part?.Dimensions?[i] is { } dimensions)
+                profileDimensions.Add(profiles[i], dimensions);
+        }
         foreach (var path in part?.OpenPaths ?? [])
         {
             var outline = path.ToList();
@@ -256,6 +260,11 @@ public partial class SketchEditor : UserControl
 
     private void StartSketchMove(List<SketchPoint>[] targets)
     {
+        if (targets.Any(profile => profileDimensions.GetValueOrDefault(profile)?.Centered == true))
+        {
+            Feedback.Text = "Change the profile position setting before moving a centered drawing.";
+            return;
+        }
         if (moveOriginal is not null)
             return;
         if (targets.Length == 0)
@@ -553,6 +562,7 @@ public partial class SketchEditor : UserControl
             int index = profiles.IndexOf(original);
             var first = regions[0].ToList();
             profiles[index] = first;
+            profileDimensions.Remove(original);
             if (originalProfiles.Remove(original, out int originalIndex))
                 originalProfiles.Add(first, originalIndex);
             profiles.InsertRange(index + 1, regions.Skip(1).Select(region => region.ToList()));
@@ -732,6 +742,11 @@ public partial class SketchEditor : UserControl
 
     private void MovePoint(object sender, RoutedEventArgs e)
     {
+        if (profileDimensions.ContainsKey(points))
+        {
+            Feedback.Text = "Clear Profile Dimensions before editing individual vertices.";
+            return;
+        }
         int index = PointList.SelectedIndex;
         if (index >= 0 && TryReadPoint(out var point, points[index]))
         {
@@ -744,6 +759,11 @@ public partial class SketchEditor : UserControl
 
     private void RemovePoint(object sender, RoutedEventArgs e)
     {
+        if (profileDimensions.ContainsKey(points))
+        {
+            Feedback.Text = "Clear Profile Dimensions before removing a vertex.";
+            return;
+        }
         int index = PointList.SelectedIndex;
         if (index < 0)
             return;

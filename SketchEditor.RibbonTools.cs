@@ -13,6 +13,11 @@ public partial class SketchEditor
             Feedback.Text = "Select drawings to scale.";
             return;
         }
+        if (targets.Any(profileDimensions.ContainsKey))
+        {
+            Feedback.Text = "Use Profile Dimensions or clear them before scaling.";
+            return;
+        }
         if (Window.GetWindow(this) is not { } owner)
             return;
         var dialog = new ModelingDialog(owner, "Sketch Scale", units);
@@ -155,6 +160,11 @@ public partial class SketchEditor
         if (Window.GetWindow(this) is not { } owner)
             return;
         var profile = points;
+        if (profileDimensions.ContainsKey(profile))
+        {
+            Feedback.Text = "Clear Profile Dimensions before modifying a corner.";
+            return;
+        }
         var dialog = new ModelingDialog(owner, round ? "Sketch Fillet" : "Sketch Chamfer", units);
         var size = dialog.Length(round ? "Radius" : "Setback", 2);
         var rounded = dialog.RunValue(() => (round ? FilletCorner(profile, index, size()) : ChamferCorner(profile, index, size())) ??

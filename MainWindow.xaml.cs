@@ -121,10 +121,10 @@ public partial class MainWindow : Window
 
     private void StartPlaneSketch(SketchPlane plane)
     {
-        OpenSketch(plane, null, (profiles, paths, _) =>
+        OpenSketch(plane, null, (profiles, paths, _, dimensions) =>
         {
             var sketch = new Part(PartKind.Sketch, NextPartName(PartKind.Sketch), 0, 0, 0, 0, 0, 0, profiles.FirstOrDefault(), plane,
-                AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null, OpenPaths: paths.Length > 0 ? paths : null);
+                AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null, OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions);
             AddFinishedSketch(sketch with { Z = -sketch.LocalBounds().Z });
         });
     }
@@ -136,11 +136,11 @@ public partial class MainWindow : Window
             SetStatus("Choose a face location within ±10,000 mm of the build-plate origin.");
             return;
         }
-        OpenSketch(SketchPlane.XY, null, (profiles, paths, _) =>
+        OpenSketch(SketchPlane.XY, null, (profiles, paths, _, dimensions) =>
         {
             AddFinishedSketch(new Part(PartKind.Sketch, NextPartName(PartKind.Sketch), 0, 0,
                 0, origin.X, origin.Y, origin.Z, profiles.FirstOrDefault(), FaceFrame: surface.Frame,
-                AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null, OpenPaths: paths.Length > 0 ? paths : null));
+                AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null, OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions));
         }, surface.Frame, surface.Guide(origin), origin);
     }
 
@@ -293,13 +293,14 @@ public partial class MainWindow : Window
         var sketch = part.Kind == PartKind.Extrusion && part.SketchId is Guid id
             ? parts.FirstOrDefault(item => item.Kind == PartKind.Sketch && item.SketchId == id) ?? part : part;
         int index = SelectedPartIndex;
-        OpenSketch(sketch.Plane, sketch, (profiles, paths, originalIndices) =>
+        OpenSketch(sketch.Plane, sketch, (profiles, paths, originalIndices, dimensions) =>
         {
             var previous = sketch.SketchProfiles.ToArray();
             if (profiles.Length == previous.Length && originalIndices.SequenceEqual(Enumerable.Range(0, previous.Length)) &&
                 profiles.Zip(previous).All(pair => pair.First.SequenceEqual(pair.Second)) &&
                 paths.Length == (sketch.OpenPaths?.Length ?? 0) &&
-                paths.Zip(sketch.OpenPaths ?? []).All(pair => pair.First.SequenceEqual(pair.Second)))
+                paths.Zip(sketch.OpenPaths ?? []).All(pair => pair.First.SequenceEqual(pair.Second)) &&
+                (dimensions ?? []).SequenceEqual(sketch.Dimensions ?? []))
                 return;
             if (profiles.Length == 0 && paths.Length == 0)
             {
@@ -311,7 +312,7 @@ public partial class MainWindow : Window
             if (sketch.Kind == PartKind.Extrusion && (profiles.Length > 1 || paths.Length > 0))
             {
                 var link = Guid.NewGuid();
-                var solid = sketch with { Profile = profiles[0], SketchId = link };
+                var solid = sketch with { Profile = profiles[0], SketchId = link, Dimensions = null };
                 if (!solid.IsValid())
                 {
                     SetStatus("The profile change conflicts with an existing bevel, hole, or thread.");
@@ -321,7 +322,7 @@ public partial class MainWindow : Window
                 parts.Add(new Part(PartKind.Sketch, NextPartName(PartKind.Sketch), 0, 0, 0,
                     sketch.X, sketch.Y, sketch.Z, profiles[0], sketch.Plane, sketch.FaceFrame,
                     SketchId: link, AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null,
-                    OpenPaths: paths.Length > 0 ? paths : null));
+                    OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions));
                 MarkDirty();
                 RefreshParts(index);
                 SetStatus($"Updated the sketch for {part.Name}.");
@@ -347,17 +348,17 @@ public partial class MainWindow : Window
             {
                 if (item.Kind == PartKind.Sketch)
                     return item with { Profile = profiles.FirstOrDefault(), AdditionalProfiles = profiles.Length > 1 ? profiles[1..] : null,
-                        OpenPaths = paths.Length > 0 ? paths : null };
+                        OpenPaths = paths.Length > 0 ? paths : null, Dimensions = dimensions };
                 int profileIndex = Array.IndexOf(originalIndices, item.SketchProfileIndex);
                 return profileIndex < 0
                     ? item with { SketchId = null, SketchProfileIndex = 0 }
-                    : item with { Profile = profiles[profileIndex], SketchProfileIndex = profileIndex };
+                    : item with { Profile = profiles[profileIndex], SketchProfileIndex = profileIndex, Dimensions = item.SketchId is null ? dimensions : null };
             }
         }, sketch.FaceFrame, origin: new Point3D(sketch.X, sketch.Y, sketch.Z),
             initialProfile: part.Kind == PartKind.Extrusion ? part.SketchProfileIndex : SelectedSketchProfile(sketch));
     }
 
-    private void OpenSketch(SketchPlane plane, Part? part, Action<SketchPoint[][], SketchPoint[][], int[]> commit,
+    private void OpenSketch(SketchPlane plane, Part? part, Action<SketchPoint[][], SketchPoint[][], int[], ProfileDimensions?[]?> commit,
                             SketchFrame? faceFrame = null, (SketchPoint Start, SketchPoint End)[]? guide = null,
                             Point3D origin = default, int initialProfile = 0)
     {
@@ -379,7 +380,7 @@ public partial class MainWindow : Window
         editor.Finished += (profile, paths) =>
         {
             CloseSketch();
-            commit(profile, paths, editor.OriginalProfileIndices);
+            commit(profile, paths, editor.OriginalProfileIndices, editor.FinishedDimensions);
         };
         ShowSketchContent(editor);
     }
@@ -1691,7 +1692,8 @@ public partial class MainWindow : Window
         }
         try
         {
-            int version = parts.Any(part => part.Holes?.Any(hole => hole.Seat is not null) == true) ? 19 :
+            int version = parts.Any(part => part.Dimensions is not null) ? 20 :
+                parts.Any(part => part.Holes?.Any(hole => hole.Seat is not null) == true) ? 19 :
                 parts.Any(part => part.BevelCuts?.Any(cut => cut.Target.ProfileKind != ProfileBevelKind.None) == true) ? 18 :
                 parts.Any(part => part.OpenPaths is not null ||
                 part.Holes?.Select(hole => hole.Axis).Distinct().Count() is > 1) ? 17 :
