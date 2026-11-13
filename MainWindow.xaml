@@ -6,6 +6,20 @@
         Icon="Assets/LayerCAD.ico"
         Background="#151A22" Foreground="#E7EDF6" FontFamily="Segoe UI" FontSize="14"
         PreviewKeyDown="HandleWorkspaceKey">
+    <Window.Resources>
+        <DataTemplate x:Key="BevelIcon">
+            <Viewbox>
+                <Canvas Width="30" Height="30">
+                    <Path Data="M 4,11 H 12 L 17,16 V 26 H 4 Z" Fill="#5182A8"/>
+                    <Path Data="M 17,16 L 27,9 V 19 L 17,26 Z" Fill="#375A7B"/>
+                    <Path Data="M 4,11 L 14,4 H 22 L 12,11 Z" Fill="#8FBFE2"/>
+                    <Path Data="M 12,11 L 22,4 L 27,9 L 17,16 Z" Fill="#FFD084"/>
+                    <Path Data="M 4,11 L 14,4 H 22 L 27,9 V 19 L 17,26 H 4 Z M 4,11 H 12 L 22,4 M 12,11 L 17,16 L 27,9 M 17,16 V 26"
+                          Stroke="#D3E8FA" StrokeThickness="1.15" StrokeLineJoin="Round"/>
+                </Canvas>
+            </Viewbox>
+        </DataTemplate>
+    </Window.Resources>
     <Grid>
     <DockPanel x:Name="Workspace">
         <Border DockPanel.Dock="Top" Background="#202838" Padding="16,12">
@@ -223,11 +237,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <Button Style="{StaticResource RibbonTool}" Click="BeginBevel" ToolTip="Bevel (Ctrl+B)"
                                         AutomationProperties.Name="Bevel">
-                                        <Grid Width="30" Height="30">
-                                            <Path Data="M 4,6 H 17 L 25,14 V 25 H 4 Z" Fill="#548DB4" Stretch="None"/>
-                                            <Path Data="M 4,6 H 17 L 25,14 V 25 H 4 Z M 17,6 V 14 H 25" Stroke="#D3E8FA" StrokeThickness="1.5" Stretch="None"
-                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                                        </Grid>
+                                        <ContentControl Width="30" Height="30" Content="Bevel" ContentTemplate="{StaticResource BevelIcon}"/>
                                     </Button>
                                     <Button Style="{StaticResource RibbonTool}" Click="BeginMove" ToolTip="Move selected bodies"
                                         AutomationProperties.Name="Move">
@@ -244,7 +254,7 @@
                                         <ContextMenu>
                                             <MenuItem Header="Bevel…" InputGestureText="Ctrl+B" Click="BeginBevel">
                                                 <MenuItem.Icon>
-                                                    <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,3 H 9 L 14,8 V 13 H 2 Z M 9,3 V 8 H 14"/>
+                                                    <ContentControl Width="16" Height="16" Content="Bevel" ContentTemplate="{StaticResource BevelIcon}"/>
                                                 </MenuItem.Icon>
                                             </MenuItem>
                                             <MenuItem Header="Linear Pattern…" Tag="Pattern" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 1,3 H 5 V 7 H 1 Z M 7,3 H 11 V 7 H 7 Z M 1,9 H 5 V 13 H 1 Z M 7,9 H 11 V 13 H 7 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
