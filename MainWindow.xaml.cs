@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private readonly List<Part> parts = [];
     private readonly HashSet<string> collapsedPartGroups = [];
     private Bed bed = new(220, 220, 250);
+    private (double Width, double Depth, Model3DGroup Model)? buildPlate;
     private readonly string preferencesPath;
     private DisplayUnits units;
     private string? projectPath;
@@ -868,34 +869,10 @@ public partial class MainWindow : Window
         models.Children.Add(new DirectionalLight(Color.FromRgb(163, 163, 163), new Vector3D(-1, 1, -2)));
         models.Children.Add(new DirectionalLight(Color.FromRgb(65, 75, 90), new Vector3D(1, -1, -0.5)));
 
-        double x = bed.X / 2, y = bed.Y / 2;
         double bedSize = Math.Max(bed.X, bed.Y);
-        models.Children.Add(MakeModel(Rectangle(-x, -y, x, y, -bedSize * 0.002), Color.FromRgb(25, 32, 44)));
-
         double scale = Math.Min(bed.X, bed.Y);
-        double z = -bedSize * 0.0005;
-        var minorGrid = new List<Triangle>();
-        var majorGrid = new List<Triangle>();
-        const int divisions = 50;
-        for (int i = 0; i <= divisions; i++)
-        {
-            if (i == divisions / 2)
-                continue;
-            bool major = i % 5 == 0;
-            var grid = major ? majorGrid : minorGrid;
-            double line = scale * (major ? 0.0012 : 0.00085);
-            double gridZ = z + (major ? bedSize * 0.0001 : 0);
-            double vertical = -x + i * bed.X / divisions;
-            double horizontal = -y + i * bed.Y / divisions;
-            grid.AddRange(Rectangle(Math.Max(-x, vertical - line), -y, Math.Min(x, vertical + line), y, gridZ));
-            grid.AddRange(Rectangle(-x, Math.Max(-y, horizontal - line), x, Math.Min(y, horizontal + line), gridZ));
-        }
-        models.Children.Add(MakeModel(minorGrid, Color.FromRgb(35, 44, 57)));
-        models.Children.Add(MakeModel(majorGrid, Color.FromRgb(49, 60, 76)));
+        models.Children.Add(BuildPlate());
         double axis = scale * 0.0013;
-        double axisZ = -bedSize * 0.00025;
-        models.Children.Add(MakeModel(Rectangle(-x, -axis, x, axis, axisZ), Color.FromRgb(161, 72, 76)));
-        models.Children.Add(MakeModel(Rectangle(-axis, -y, axis, y, axisZ), Color.FromRgb(83, 153, 105)));
 
         foreach (Part part in parts)
         {
@@ -977,6 +954,71 @@ public partial class MainWindow : Window
         UpdateSketchProfileHighlight();
 
         static byte Tint(byte surface, byte highlight) => (byte)((surface * 81 + highlight * 19) / 100);
+    }
+
+    private Model3DGroup BuildPlate()
+    {
+        double width = bed.X, depth = bed.Y;
+        if (buildPlate is { } cached && cached.Width == width && cached.Depth == depth)
+            return cached.Model;
+        double scale = Math.Min(width, depth);
+        double top = -scale * 0.001;
+        double thickness = scale * 0.006;
+        var slab = new Part(PartKind.Box, "Build plate", width, depth, thickness, 0, 0, top - thickness);
+        var plate = new Model3DGroup();
+        // Omit the slab's top triangles so the textured face has exclusive depth.
+        var shell = MakeMesh(Geometry.Build(slab).Where(triangle => BevelFacetNormal(triangle).Z < 0.5));
+        var shellMaterial = new MaterialGroup
+        {
+            Children =
+            {
+                new DiffuseMaterial(new SolidColorBrush(Color.FromRgb(30, 39, 53))),
+                new EmissiveMaterial(new SolidColorBrush(Color.FromRgb(22, 30, 41)))
+            }
+        };
+        plate.Children.Add(new GeometryModel3D(shell, shellMaterial));
+
+        var texture = new DrawingGroup();
+        var bounds = new Rect(0, 0, width, depth);
+        using (var drawing = texture.Open())
+        {
+            drawing.PushClip(new RectangleGeometry(bounds));
+            drawing.DrawRectangle(new SolidColorBrush(Color.FromRgb(25, 32, 44)), null, bounds);
+            var minor = new Pen(new SolidColorBrush(Color.FromRgb(35, 44, 57)), scale * 0.0017);
+            var major = new Pen(new SolidColorBrush(Color.FromRgb(49, 60, 76)), scale * 0.0024);
+            const int divisions = 50;
+            for (int i = 0; i <= divisions; i++)
+            {
+                if (i == divisions / 2)
+                    continue;
+                var pen = i % 5 == 0 ? major : minor;
+                double x = width * i / divisions, y = depth * i / divisions;
+                drawing.DrawLine(pen, new Point(x, 0), new Point(x, depth));
+                drawing.DrawLine(pen, new Point(0, y), new Point(width, y));
+            }
+            double axisWidth = scale * 0.0026;
+            drawing.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(161, 72, 76)), axisWidth),
+                new Point(0, depth / 2), new Point(width, depth / 2));
+            drawing.DrawLine(new Pen(new SolidColorBrush(Color.FromRgb(83, 153, 105)), axisWidth),
+                new Point(width / 2, 0), new Point(width / 2, depth));
+            drawing.Pop();
+        }
+        var brush = new DrawingBrush(texture);
+        RenderOptions.SetCachingHint(brush, CachingHint.Cache);
+        var mesh = new MeshGeometry3D
+        {
+            Positions = new Point3DCollection
+            {
+                new(-width / 2, -depth / 2, top), new(width / 2, -depth / 2, top),
+                new(width / 2, depth / 2, top), new(-width / 2, depth / 2, top)
+            },
+            TextureCoordinates = new PointCollection { new(0, 1), new(1, 1), new(1, 0), new(0, 0) },
+            TriangleIndices = new Int32Collection { 0, 1, 2, 0, 2, 3 }
+        };
+        plate.Children.Add(new GeometryModel3D(mesh, new DiffuseMaterial(brush)));
+        plate.Freeze();
+        buildPlate = (width, depth, plate);
+        return plate;
     }
 
     private Rect OriginPlanePickerBounds(SketchPlane plane)
