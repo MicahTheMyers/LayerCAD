@@ -914,8 +914,8 @@ public partial class MainWindow : Window
             featureSource?.Kind == PartKind.Sketch && !featureMove;
         if (extrudeActive)
         {
-            ExtrudeButton.Background = (Brush)FindResource("Accent");
-            ExtrudeButton.BorderBrush = Brushes.LightSkyBlue;
+            ExtrudeButton.Background = (Brush)FindResource("ActiveRibbonBackground");
+            ExtrudeButton.BorderBrush = (Brush)FindResource("ActiveRibbonBorder");
         }
         else
         {

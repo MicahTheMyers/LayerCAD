@@ -9,6 +9,8 @@
         <SolidColorBrush x:Key="ViewportBackground" Color="#0A1422"/>
         <SolidColorBrush x:Key="PanelBorder" Color="#29415A"/>
         <SolidColorBrush x:Key="Accent" Color="#1769C4"/>
+        <SolidColorBrush x:Key="ActiveRibbonBackground" Color="#123967"/>
+        <SolidColorBrush x:Key="ActiveRibbonBorder" Color="#559FFF"/>
         <Style TargetType="Button">
             <Setter Property="Background" Value="#14243A"/>
             <Setter Property="Foreground" Value="#EDF3FC"/>
@@ -88,7 +90,8 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border Background="#123967" BorderBrush="#559FFF" BorderThickness="1" CornerRadius="7"
+                        <Border Background="{StaticResource ActiveRibbonBackground}" BorderBrush="{StaticResource ActiveRibbonBorder}"
+                                BorderThickness="1" CornerRadius="7"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
                         </Border>
