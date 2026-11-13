@@ -488,7 +488,7 @@
                   MouseDown="OrbitStart" MouseUp="OrbitEnd" MouseMove="OrbitMove"
                   MouseRightButtonUp="OpenViewportPartMenu"
                   MouseWheel="Zoom" MouseLeave="ClearSurfaceHover" LostMouseCapture="LoseBuildCapture">
-                <Viewport3D x:Name="ModelViewport" ClipToBounds="True" IsHitTestVisible="False">
+                <Viewport3D x:Name="ModelViewport" IsHitTestVisible="False">
                     <Viewport3D.Camera>
                         <PerspectiveCamera x:Name="Camera" FieldOfView="45" NearPlaneDistance="0.5" FarPlaneDistance="100000"/>
                     </Viewport3D.Camera>

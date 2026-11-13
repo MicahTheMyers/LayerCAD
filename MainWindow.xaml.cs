@@ -8,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Media.Media3D;
 using Microsoft.Win32;
 
@@ -1062,8 +1063,19 @@ public partial class MainWindow : Window
                 new Point(width / 2, 0), new Point(width / 2, depth));
             drawing.Pop();
         }
-        var brush = new DrawingBrush(texture);
-        RenderOptions.SetCachingHint(brush, CachingHint.Cache);
+        // Rasterize the grid once per bed size and reuse the same texture at every camera angle.
+        const int textureSize = 1024;
+        var visual = new DrawingVisual();
+        using (var drawing = visual.RenderOpen())
+        {
+            drawing.PushTransform(new ScaleTransform(textureSize / width, textureSize / depth));
+            drawing.DrawDrawing(texture);
+            drawing.Pop();
+        }
+        var bitmap = new RenderTargetBitmap(textureSize, textureSize, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        bitmap.Freeze();
+        var brush = new ImageBrush(bitmap);
         var mesh = new MeshGeometry3D
         {
             Positions = new Point3DCollection
