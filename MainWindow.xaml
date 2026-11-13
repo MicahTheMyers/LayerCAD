@@ -4,7 +4,7 @@
         xmlns:local="clr-namespace:LayerCAD"
         Title="LayerCAD" Width="1250" Height="800" MinWidth="940" MinHeight="660"
         Icon="Assets/LayerCAD.ico"
-        Background="#151A22" Foreground="#E7EDF6" FontFamily="Segoe UI" FontSize="14"
+        Background="{StaticResource WorkspaceBackground}" Foreground="#E7EDF6" FontFamily="Segoe UI" FontSize="14"
         PreviewKeyDown="HandleWorkspaceKey">
     <Window.Resources>
         <DataTemplate x:Key="BevelIcon">
@@ -20,11 +20,12 @@
             </Viewbox>
         </DataTemplate>
     </Window.Resources>
-    <Grid>
+    <Grid Background="{StaticResource WorkspaceBackground}">
     <DockPanel x:Name="Workspace">
-        <Border DockPanel.Dock="Top" Background="#202838" Padding="16,12">
+        <Border DockPanel.Dock="Top" Background="{StaticResource PanelBackground}" Padding="14,8"
+                Margin="12,10,12,8" CornerRadius="10" BorderBrush="{StaticResource PanelBorder}" BorderThickness="1">
             <DockPanel LastChildFill="False">
-                <Menu VerticalAlignment="Center" Background="#202838" Foreground="#E7EDF6" Margin="0,0,14,0">
+                <Menu VerticalAlignment="Center" Background="Transparent" Foreground="#E7EDF6" Margin="0,0,14,0">
                     <Menu.Resources>
                         <Style TargetType="MenuItem">
                             <Setter Property="Foreground" Value="#EDF3FC"/>
@@ -49,7 +50,7 @@
                             <ControlTemplate TargetType="MenuItem">
                                 <Grid>
                                     <Border x:Name="FileButton" Background="{TemplateBinding Background}"
-                                            BorderBrush="#40506A" BorderThickness="1" Padding="{TemplateBinding Padding}">
+                                            BorderBrush="{StaticResource PanelBorder}" BorderThickness="1" CornerRadius="7" Padding="{TemplateBinding Padding}">
                                         <StackPanel Orientation="Horizontal">
                                             <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
                                             <Path Data="M 0,0 L 4,4 L 8,0" Stroke="#ADBACD" StrokeThickness="1.4"
@@ -58,7 +59,7 @@
                                     </Border>
                                     <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
                                            IsOpen="{TemplateBinding IsSubmenuOpen}">
-                                        <Border Background="#202838" BorderBrush="#40506A" BorderThickness="1"
+                                        <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource PanelBorder}" BorderThickness="1"
                                                 MinWidth="155" Padding="3">
                                             <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
                                         </Border>
@@ -90,11 +91,11 @@
                     <Path Data="F0 M 8.94,4.61 L 10.07,4.24 L 10.11,1.67 L 13.89,1.67 L 13.93,4.24 L 15.06,4.61 L 16.13,5.15 L 17.97,3.36 L 20.64,6.03 L 18.85,7.87 L 19.39,8.94 L 19.76,10.07 L 22.33,10.11 L 22.33,13.89 L 19.76,13.93 L 19.39,15.06 L 18.85,16.13 L 20.64,17.97 L 17.97,20.64 L 16.13,18.85 L 15.06,19.39 L 13.93,19.76 L 13.89,22.33 L 10.11,22.33 L 10.07,19.76 L 8.94,19.39 L 7.87,18.85 L 6.03,20.64 L 3.36,17.97 L 5.15,16.13 L 4.61,15.06 L 4.24,13.93 L 1.67,13.89 L 1.67,10.11 L 4.24,10.07 L 4.61,8.94 L 5.15,7.87 L 3.36,6.03 L 6.03,3.36 L 7.87,5.15 Z M 12,7.8 A 4.2,4.2 0 1 0 12,16.2 A 4.2,4.2 0 1 0 12,7.8 Z"
                           Width="23" Height="23" Stretch="Uniform" Fill="#DDE7F5"/>
                 </Button>
-                <Button DockPanel.Dock="Right" Content="Export selected STL…" Click="ExportStl" Background="#246A62"/>
+                <Button DockPanel.Dock="Right" Content="Export selected STL…" Click="ExportStl" Background="{StaticResource Accent}"/>
             </DockPanel>
         </Border>
-        <TabControl x:Name="BuildRibbon" DockPanel.Dock="Top" Margin="16,0,16,0"
-            Background="#252F3E" BorderBrush="#40506A" Padding="5">
+        <TabControl x:Name="BuildRibbon" DockPanel.Dock="Top" Margin="12,0,12,0"
+            Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource PanelBorder}" Padding="5">
             <TabControl.Resources>
                 <Style x:Key="RibbonTool" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                     <Setter Property="Width" Value="41"/>
@@ -146,7 +147,7 @@
                     </Setter>
                 </Style>
                 <Style TargetType="ContextMenu">
-                    <Setter Property="Background" Value="#252F3E"/>
+                    <Setter Property="Background" Value="{StaticResource PanelBackground}"/>
                     <Setter Property="Foreground" Value="#EDF3FC"/>
                     <Setter Property="BorderBrush" Value="#53657B"/>
                     <Setter Property="Template">
@@ -363,7 +364,7 @@
                 </Grid>
             </TabItem>
         </TabControl>
-        <Border DockPanel.Dock="Bottom" Background="#202838" Padding="16,9">
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource PanelBackground}" Padding="16,9">
             <TextBlock x:Name="Status" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
         </Border>
         <Grid>
@@ -371,7 +372,9 @@
                 <ColumnDefinition x:Name="PartsColumn" Width="232"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <DockPanel x:Name="PartsPane" Margin="15">
+            <Border x:Name="PartsPane" Margin="12,10,8,10" Padding="10" CornerRadius="10"
+                    Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource PanelBorder}" BorderThickness="1">
+            <DockPanel>
                 <StackPanel DockPanel.Dock="Top">
                     <DockPanel Margin="0,0,0,9">
                         <Button x:Name="PartsSectionButton" DockPanel.Dock="Right" Click="TogglePartsSection"
@@ -386,7 +389,7 @@
                 <ListBox x:Name="PartList" SelectionChanged="SelectionChanged"
                          PreviewMouseLeftButtonDown="TogglePartRow" PreviewMouseLeftButtonUp="ReopenPartPopup" MouseDoubleClick="OpenPartSketch"
                          PreviewKeyDown="OpenPartSketchFromKeyboard"
-                         Background="#141B25" Foreground="#EDF3FC" BorderBrush="#40506A"
+                         Background="#141B25" Foreground="#EDF3FC" BorderBrush="{StaticResource PanelBorder}"
                          AutomationProperties.Name="Parts">
                     <ListBox.GroupStyle>
                         <GroupStyle HidesIfEmpty="False">
@@ -396,7 +399,7 @@
                                         <Setter.Value>
                                             <ControlTemplate TargetType="GroupItem">
                                                 <Expander Header="{Binding}" IsExpanded="True" Margin="4,4,4,1"
-                                                          Foreground="#E7EDF6" Background="#202838"
+                                                          Foreground="#E7EDF6" Background="{StaticResource PanelBackground}"
                                                           Loaded="RestorePartGroup" Expanded="RememberPartGroup"
                                                           Collapsed="RememberPartGroup">
                                                     <Expander.HeaderTemplate>
@@ -484,7 +487,8 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
             </DockPanel>
-            <Grid x:Name="OrbitSurface" Grid.Column="1" Background="#101620" ClipToBounds="True" Focusable="True" SizeChanged="ViewportResized"
+            </Border>
+            <Grid x:Name="OrbitSurface" Grid.Column="1" Background="{StaticResource ViewportBackground}" ClipToBounds="True" Focusable="True" SizeChanged="ViewportResized"
                   MouseDown="OrbitStart" MouseUp="OrbitEnd" MouseMove="OrbitMove"
                   MouseRightButtonUp="OpenViewportPartMenu"
                   MouseWheel="Zoom" MouseLeave="ClearSurfaceHover" LostMouseCapture="LoseBuildCapture">
@@ -515,7 +519,9 @@
                       StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                 <Path x:Name="BevelCornerMarkers" IsHitTestVisible="False" Fill="#FF6875" Stroke="#632F3C"
                       StrokeThickness="1.8" Opacity="0.65"/>
-                <Border x:Name="BedBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" Background="#202838" Padding="7,4">
+                <Border x:Name="BedBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12"
+                        Background="{StaticResource PanelBackground}" Padding="8,5" CornerRadius="7"
+                        BorderBrush="{StaticResource PanelBorder}" BorderThickness="1">
                     <TextBlock x:Name="BedLabel" FontSize="11" Foreground="#ADBACD"/>
                 </Border>
                 <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12">
@@ -527,7 +533,7 @@
                             Padding="8,4" FontSize="12" HorizontalAlignment="Center"/>
                 </StackPanel>
                 <Border x:Name="SurfaceTooltip" Visibility="Collapsed" HorizontalAlignment="Left"
-                        VerticalAlignment="Top" Background="#202838" BorderBrush="#546176" BorderThickness="1"
+                        VerticalAlignment="Top" Background="{StaticResource PanelBackground}" BorderBrush="#546176" BorderThickness="1"
                         CornerRadius="2" Padding="7,4" IsHitTestVisible="False">
                     <Border.RenderTransform>
                         <TranslateTransform x:Name="SurfaceTooltipPosition"/>
@@ -549,13 +555,13 @@
                             <Setter Property="Template">
                                 <Setter.Value>
                                     <ControlTemplate TargetType="RadioButton">
-                                        <Border x:Name="ModeBorder" Background="#293345" BorderBrush="#40506A"
+                                        <Border x:Name="ModeBorder" Background="#293345" BorderBrush="{StaticResource PanelBorder}"
                                                 BorderThickness="1" Padding="{TemplateBinding Padding}">
                                             <ContentPresenter RecognizesAccessKey="True"/>
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsChecked" Value="True">
-                                                <Setter TargetName="ModeBorder" Property="Background" Value="#246A62"/>
+                                                <Setter TargetName="ModeBorder" Property="Background" Value="{StaticResource Accent}"/>
                                             </Trigger>
                                             <Trigger Property="IsKeyboardFocused" Value="True">
                                                 <Setter TargetName="ModeBorder" Property="BorderBrush" Value="#D6E9FF"/>
@@ -577,8 +583,8 @@
                 <TextBlock x:Name="ViewportMouseHint" Text="Drag empty space to box-select · Middle-drag to orbit" Style="{StaticResource Muted}"
                            HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="10" IsHitTestVisible="False"/>
                 <Border x:Name="FeaturePanel" Visibility="Collapsed" Width="232" HorizontalAlignment="Right"
-                        VerticalAlignment="Bottom" Margin="0,0,16,38" Padding="12" CornerRadius="4"
-                        Background="#202838" BorderBrush="#537483" BorderThickness="1"
+                        VerticalAlignment="Bottom" Margin="0,0,16,38" Padding="12" CornerRadius="9"
+                        Background="{StaticResource PanelBackground}" BorderBrush="#537483" BorderThickness="1"
                         MouseLeftButtonDown="KeepFeatureInput" MouseWheel="KeepFeatureWheel">
                     <StackPanel>
                         <TextBlock x:Name="FeatureTitle" Style="{StaticResource Heading}" Margin="0,0,0,8"/>
@@ -672,7 +678,7 @@
                         </StackPanel>
                         <TextBlock x:Name="FeatureFeedback" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,9"/>
                         <StackPanel Orientation="Horizontal">
-                            <Button x:Name="ApplyFeatureButton" Content="Apply" Click="ApplyBuildFeature" Background="#246A62"/>
+                            <Button x:Name="ApplyFeatureButton" Content="Apply" Click="ApplyBuildFeature" Background="{StaticResource Accent}"/>
                             <Button Content="Cancel" Click="CancelBuildFeature" Margin="0"/>
                         </StackPanel>
                     </StackPanel>
@@ -685,8 +691,8 @@
                 <Path Data="M 3,1 L 7,5 L 3,9" Stroke="#C5DAEE" StrokeThickness="1.5"/>
             </Button>
             <Border x:Name="PartPopup" Grid.ColumnSpan="2" Width="224" Visibility="Collapsed" HorizontalAlignment="Left"
-                    VerticalAlignment="Top" Background="#202838" BorderBrush="#537483" BorderThickness="1"
-                    CornerRadius="4" Padding="10">
+                    VerticalAlignment="Top" Background="{StaticResource PanelBackground}" BorderBrush="#537483" BorderThickness="1"
+                    CornerRadius="9" Padding="10">
                 <Border.RenderTransform>
                     <TranslateTransform x:Name="PartPopupPosition"/>
                 </Border.RenderTransform>
@@ -744,7 +750,7 @@
                                 </StackPanel>
                             </UniformGrid>
                             <WrapPanel Margin="0,4,0,0">
-                                <Button Content="Apply" Click="ApplyPart" Background="#246A62" Padding="9,5"/>
+                                <Button Content="Apply" Click="ApplyPart" Background="{StaticResource Accent}" Padding="9,5"/>
                                 <Button Content="Drop to bed" Click="DropPart" Margin="0" Padding="9,5"/>
                             </WrapPanel>
                             <Button x:Name="EditSketchButton" Content="Edit sketch…" Click="EditSketch"

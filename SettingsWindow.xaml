@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="LayerCAD Settings" Width="402" SizeToContent="Height" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
-        Background="#151A22" Foreground="#E7EDF6" FontFamily="Segoe UI" FontSize="14">
+        Background="{StaticResource WorkspaceBackground}" Foreground="#E7EDF6" FontFamily="Segoe UI" FontSize="14">
     <Window.Resources>
         <Style TargetType="RadioButton">
             <Setter Property="Foreground" Value="#E7EDF6"/>
@@ -63,7 +63,7 @@
                    Margin="0,0,0,12" AutomationProperties.LiveSetting="Polite"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Cancel" IsCancel="True"/>
-            <Button Content="Apply" IsDefault="True" Click="Apply" Background="#246A62" Margin="0"/>
+            <Button Content="Apply" IsDefault="True" Click="Apply" Background="{StaticResource Accent}" Margin="0"/>
         </StackPanel>
     </StackPanel>
 </Window>
