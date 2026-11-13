@@ -1804,8 +1804,9 @@ public partial class MainWindow : Window
 
     private void SetTitle()
     {
-        string name = projectPath is null ? "Untitled" : Path.GetFileNameWithoutExtension(projectPath);
-        Title = $"LayerCAD — {name}{(dirty ? " *" : "")}";
+        Title = projectPath is null
+            ? "LayerCAD"
+            : $"LayerCAD — {Path.GetFileNameWithoutExtension(projectPath)}{(dirty ? " *" : "")}";
     }
 
     private bool ConfirmDiscard()
