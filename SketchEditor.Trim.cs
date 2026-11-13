@@ -143,6 +143,7 @@ public partial class SketchEditor
         profiles.RemoveAt(index);
         originalProfiles.Remove(profile);
         profileDimensions.Remove(profile);
+        constraints.Remove(profile);
         openProfiles.Remove(profile);
         foreach (var piece in remaining)
         {

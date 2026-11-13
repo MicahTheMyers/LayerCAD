@@ -92,7 +92,9 @@ public sealed record Part(PartKind Kind, string Name, double Width, double Depth
                           [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
                           SketchPoint[][]? OpenPaths = null,
                           [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-                          ProfileDimensions?[]? Dimensions = null)
+                          ProfileDimensions?[]? Dimensions = null,
+                          [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+                          ProfileConstraint[]?[]? Constraints = null)
 {
     [JsonIgnore]
     internal IEnumerable<SketchPoint[]> SketchProfiles => Profile is null ? [] : new[] { Profile }.Concat(AdditionalProfiles ?? []);
@@ -129,7 +131,7 @@ public sealed record Part(PartKind Kind, string Name, double Width, double Depth
         (Dimensions is null || Kind is PartKind.Sketch or PartKind.Extrusion &&
             Dimensions.Length == SketchProfiles.Count() && Dimensions.Any(item => item is not null) &&
             Dimensions.All(item => item is null || item.IsValid())) &&
-        ValidOffset(X) && ValidOffset(Y) && ValidOffset(Z) &&
+        ValidConstraints() && ValidOffset(X) && ValidOffset(Y) && ValidOffset(Z) &&
         (Bevel == 0 || ValidBevel(Bevel)) &&
         (BevelCuts is null || (BevelCuts.Length > 0 &&
             BevelCuts.All(ValidBevelCut) &&
@@ -140,6 +142,23 @@ public sealed record Part(PartKind Kind, string Name, double Width, double Depth
         (BevelCuts is null || ValidBevelCombination()) &&
         (Holes is null || HoleGeometry.IsValid(this)) &&
         (Threads is null || ThreadGeometry.IsValid(this));
+
+    private bool ValidConstraints()
+    {
+        if (Constraints is null)
+            return true;
+        var closed = SketchProfiles.ToArray();
+        var outlines = closed.Concat(OpenPaths ?? []).ToArray();
+        return Kind is PartKind.Sketch or PartKind.Extrusion && Constraints.Length == outlines.Length &&
+            Constraints.Any(rules => rules is { Length: > 0 }) &&
+            Constraints.Select((rules, i) => rules is null || outlines[i] is { Length: > 0 } outline &&
+                rules.All(rule => rule is not null && Enum.IsDefined(rule.Kind) && rule.Vertex >= 0 && rule.Vertex < outline.Length &&
+                    (rule.Kind == ProfileConstraintKind.CoincidentOrigin ? outline[rule.Vertex] == default :
+                    (i < closed.Length || rule.Vertex < outline.Length - 1) &&
+                    (rule.Kind == ProfileConstraintKind.Horizontal
+                        ? outline[rule.Vertex].Y == outline[(rule.Vertex + 1) % outline.Length].Y
+                        : outline[rule.Vertex].X == outline[(rule.Vertex + 1) % outline.Length].X)))).All(valid => valid);
+    }
 
     private bool ValidBevel(double amount) => ValidDimension(amount) && BevelBox() is { } box &&
         amount < Math.Min(box.Width, Math.Min(box.Depth, box.Height)) / 2;
@@ -245,7 +264,7 @@ public sealed record Bed(double X, double Y, double Z)
 
 public sealed record Project(int Version, Bed Bed, Part[] Parts)
 {
-    public bool IsValid() => Version is >= 1 and <= 20 && Bed is not null && Bed.IsValid() &&
+    public bool IsValid() => Version is >= 1 and <= 21 && Bed is not null && Bed.IsValid() &&
         Parts is not null && Parts.All(part => part is not null && part.IsValid() &&
             (Version >= 2 || part.Kind != PartKind.Extrusion) &&
             (Version >= 3 || part.Plane == SketchPlane.XY) &&
@@ -267,7 +286,8 @@ public sealed record Project(int Version, Bed Bed, Part[] Parts)
             (Version >= 17 || part.OpenPaths is null && part.Holes?.Select(hole => hole.Axis).Distinct().Count() is not > 1) &&
             (Version >= 18 || part.BevelCuts?.Any(cut => cut.Target.ProfileKind != ProfileBevelKind.None) != true) &&
             (Version >= 19 || part.Holes?.Any(hole => hole.Seat is not null) != true) &&
-            (Version >= 20 || part.Dimensions is null)) && ValidSketchLinks();
+            (Version >= 20 || part.Dimensions is null) &&
+            (Version >= 21 || part.Constraints is null)) && ValidSketchLinks();
 
     private bool ValidSketchLinks()
     {

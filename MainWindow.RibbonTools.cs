@@ -24,12 +24,12 @@ public partial class MainWindow
         var setup = dialog.RunValue(() => OffsetPlane(plane(), offset(), face), "Start Sketch");
         if (setup is null)
             return;
-        OpenSketch(SketchPlane.XY, null, (profiles, paths, _, dimensions) =>
+        OpenSketch(SketchPlane.XY, null, (profiles, paths, _, dimensions, constraints) =>
         {
             var (x, y, z) = (setup.Origin.X, setup.Origin.Y, setup.Origin.Z);
             AddFinishedSketch(new Part(PartKind.Sketch, NextPartName(PartKind.Sketch), 0, 0, 0, x, y, z,
                 profiles.FirstOrDefault(), FaceFrame: setup.Frame, AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null,
-                OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions));
+                OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions, Constraints: constraints));
         }, setup.Frame, null, setup.Origin);
     }
 

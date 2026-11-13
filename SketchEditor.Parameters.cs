@@ -32,6 +32,11 @@ public partial class SketchEditor
 
     private void EditProfileDimensions(object sender, RoutedEventArgs e)
     {
+        if (constraints.ContainsKey(points))
+        {
+            Feedback.Text = "Clear vertex constraints before setting profile dimensions.";
+            return;
+        }
         if (PlacementStart is not null || moveOriginal is not null || !profiles.Contains(points) || openProfiles.Contains(points) ||
             Window.GetWindow(this) is not { } owner)
         {
@@ -87,7 +92,7 @@ public partial class SketchEditor
             foreach (var profile in profiles.Where(profile => !ReferenceEquals(profile, points) &&
                 !openProfiles.Contains(profile) && IsCircularProfile(profile)))
             {
-                if (profileDimensions.GetValueOrDefault(profile)?.Centered == true ||
+                if (constraints.ContainsKey(profile) || profileDimensions.GetValueOrDefault(profile)?.Centered == true ||
                     !profile.All(point => Contains(points, point)))
                     continue;
                 double x = profile.Average(p => p.X), y = profile.Average(p => p.Y);

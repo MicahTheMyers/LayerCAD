@@ -56,7 +56,7 @@ public partial class MainWindow
                 SketchId = link, SketchProfileIndex = link is null ? 0 : part.SketchProfileIndex
             };
         }).ToArray();
-        if (!new Project(20, bed, pasted).IsValid())
+        if (!new Project(21, bed, pasted).IsValid())
         {
             SetStatus("The copied items could not be pasted.");
             return;

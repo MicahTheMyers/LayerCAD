@@ -71,6 +71,10 @@ public partial class SketchEditor : UserControl
             openProfiles.Add(outline);
         }
         canFinishEmpty = part?.Kind == PartKind.Sketch;
+        if (part?.Constraints is { } stored)
+            for (int i = 0; i < profiles.Count; i++)
+                if (stored[i] is { } rules)
+                    constraints.Add(profiles[i], rules);
         requiresClosedProfile = part?.Kind == PartKind.Extrusion;
         points = profiles.FirstOrDefault() ?? [];
         faceGuide = guide ?? [];
@@ -260,7 +264,8 @@ public partial class SketchEditor : UserControl
 
     private void StartSketchMove(List<SketchPoint>[] targets)
     {
-        if (targets.Any(profile => profileDimensions.GetValueOrDefault(profile)?.Centered == true))
+        if (targets.Any(profile => profileDimensions.GetValueOrDefault(profile)?.Centered == true ||
+            constraints.GetValueOrDefault(profile)?.Any(rule => rule.Kind == ProfileConstraintKind.CoincidentOrigin) == true))
         {
             Feedback.Text = "Change the profile position setting before moving a centered drawing.";
             return;
@@ -563,6 +568,7 @@ public partial class SketchEditor : UserControl
             var first = regions[0].ToList();
             profiles[index] = first;
             profileDimensions.Remove(original);
+            constraints.Remove(original);
             if (originalProfiles.Remove(original, out int originalIndex))
                 originalProfiles.Add(first, originalIndex);
             profiles.InsertRange(index + 1, regions.Skip(1).Select(region => region.ToList()));
@@ -750,6 +756,22 @@ public partial class SketchEditor : UserControl
         int index = PointList.SelectedIndex;
         if (index >= 0 && TryReadPoint(out var point, points[index]))
         {
+            if (constraints.TryGetValue(points, out var rules))
+            {
+                var draft = points.ToArray();
+                draft[index] = point;
+                var solved = SolveConstraints(draft, rules, index);
+                if (!ValidConstrainedOutline(solved))
+                {
+                    Feedback.Text = "That edit would make the constrained drawing invalid.";
+                    return;
+                }
+                RecordSketchEdit(CaptureSketch());
+                points.Clear();
+                points.AddRange(solved);
+                Refresh(index);
+                return;
+            }
             if (!drawingPolyline && point != points[index])
                 RecordSketchEdit(CaptureSketch());
             points[index] = point;
@@ -759,6 +781,11 @@ public partial class SketchEditor : UserControl
 
     private void RemovePoint(object sender, RoutedEventArgs e)
     {
+        if (constraints.ContainsKey(points))
+        {
+            Feedback.Text = "Clear the drawing constraints before removing a vertex.";
+            return;
+        }
         if (profileDimensions.ContainsKey(points))
         {
             Feedback.Text = "Clear Profile Dimensions before removing a vertex.";

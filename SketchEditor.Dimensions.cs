@@ -66,6 +66,11 @@ public partial class SketchEditor
 
         if (!profiles.Contains(points))
             return false;
+        if (constraints.ContainsKey(points))
+        {
+            Feedback.Text = "Use the Vertices list to resize this constrained drawing.";
+            return false;
+        }
         if (profileDimensions.TryGetValue(points, out var parameters))
         {
             bool round = IsCircularProfile(points);

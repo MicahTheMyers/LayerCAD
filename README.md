@@ -79,6 +79,8 @@ In Build Mode, use **Ctrl+E** for Extrude and **Ctrl+B** for Bevel.
 
 Use **Sketch → Modify → Profile Dimensions** to save the dimensions of a closed profile. Choose **Center on sketch origin** to keep the outline centered. **Follow profile size** moves enclosed sketch circles proportionally as the outline is resized and preserves their diameters. Finish the sketch to rebuild linked extrusions.
 
+In Sketch Mode, choose a drawing and select a vertex in **Vertices**. Use **Modify → Horizontal Segment** or **Vertical Segment** for the segment that starts at that vertex, or **Coincident with Origin** to pin the vertex to sketch coordinates zero. **Move selected** maintains these relationships. Use **Clear Vertex Constraints** to remove the constraints from the drawing.
+
 ## Build from source
 
 Install the .NET 8 SDK on Windows, then run these commands from the project directory.

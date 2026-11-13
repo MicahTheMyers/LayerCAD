@@ -304,6 +304,11 @@
                                                 <MenuItem Header="Sketch Scale…" Click="BeginSketchScale"/>
                                                 <MenuItem Header="Profile Dimensions…" Click="EditProfileDimensions"/>
                                                 <MenuItem Header="Clear Profile Dimensions" Click="ClearProfileDimensions"/>
+                                                <Separator/>
+                                                <MenuItem Header="Horizontal Segment" Tag="Horizontal" Click="AddProfileConstraint"/>
+                                                <MenuItem Header="Vertical Segment" Tag="Vertical" Click="AddProfileConstraint"/>
+                                                <MenuItem Header="Coincident with Origin" Tag="CoincidentOrigin" Click="AddProfileConstraint"/>
+                                                <MenuItem Header="Clear Vertex Constraints" Click="ClearProfileConstraints"/>
                                                 <MenuItem Header="Equal Distance Chamfer…" Click="BeginSketchChamfer"/>
                                             </ContextMenu>
                                         </Button.ContextMenu>

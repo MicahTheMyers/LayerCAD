@@ -154,7 +154,7 @@ internal sealed record FaceExtrusion(Part Source, Point3D Origin, Vector3D Norma
         var changed = (SketchPoint[])profile.Clone();
         changed[ProfileEdge] = newA;
         changed[next] = newB;
-        var result = Source with { Profile = changed, SketchId = null, SketchProfileIndex = 0, Dimensions = null };
+        var result = Source with { Profile = changed, SketchId = null, SketchProfileIndex = 0, Dimensions = null, Constraints = null };
         var region = result with { Profile = [a, b, newB, newA] };
         if (!result.IsValid() || !region.IsValid())
             return null;
