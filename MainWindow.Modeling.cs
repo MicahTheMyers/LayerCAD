@@ -50,7 +50,7 @@ public partial class MainWindow
             "Box" or "Cylinder" or "Sphere" or "Torus" => PrimitiveTool(dialog, tool),
             "Revolve" when profiles.Length > 0 => RevolveTool(dialog, profiles, selectedProfile),
             "Sweep" when profiles.Length > 0 && paths.Length > 0 => SweepTool(dialog, profiles, paths, selectedProfile, selectedPath),
-            "Loft" when profiles.Length >= 2 => LoftTool(dialog, profiles),
+            "Loft" when profiles.Length >= 2 => LoftTool(dialog, profiles, paths),
             "Pipe" when paths.Length > 0 => PipeTool(dialog, paths, selectedPath),
             "Coil" => CoilTool(dialog),
             "Rib" when paths.Length > 0 => RibTool(dialog, paths, selectedPath),
@@ -138,12 +138,18 @@ public partial class MainWindow
         };
     }
 
-    private Func<Part[]> LoftTool(ModelingDialog dialog, ModelProfile[] profiles)
+    private Func<Part[]> LoftTool(ModelingDialog dialog, ModelProfile[] profiles, ModelProfile[] paths)
     {
         dialog.Hint("Ctrl-click two or more closed profiles on separate parallel planes.");
         var chosen = dialog.MultiChoice("Profiles", profiles);
+        if (paths.Length > 0)
+            dialog.Hint("A guide is optional. It must meet a vertex on each profile.");
+        var guide = paths.Length == 0 ? null : dialog.Choice("Guide curve",
+            new[] { "None" }.Concat(paths.Select(path => path.Label)).ToArray());
         return () => [MeshBody(NextModeledName("Loft"),
-            ModelingMeshes.Loft(chosen().Select(profile => (profile.Sketch, profile.Points)).ToArray()))];
+            ModelingMeshes.Loft(chosen().Select(profile => (profile.Sketch, profile.Points)).ToArray(),
+                guide?.Invoke() is { } label && label != "None" && paths.FirstOrDefault(path => path.Label == label) is { } rail
+                    ? (rail.Sketch, rail.Points) : null))];
     }
 
     private Func<Part[]> PipeTool(ModelingDialog dialog, ModelProfile[] paths, int index)

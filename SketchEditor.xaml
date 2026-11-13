@@ -354,6 +354,7 @@
                         <PerspectiveCamera x:Name="ReferenceCamera" FieldOfView="45" NearPlaneDistance="0.5" FarPlaneDistance="100000"/>
                     </Viewport3D.Camera>
                     <ModelVisual3D x:Name="ReferenceScene"/>
+                    <ModelVisual3D x:Name="ReferenceImageModel"/>
                 </Viewport3D>
                 <Canvas x:Name="SketchGrid" IsHitTestVisible="False">
                     <Path x:Name="SketchGridLines"/>
@@ -394,6 +395,7 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top">
                     <TextBlock Text="Vertices" Style="{StaticResource Heading}"/>
+                    <Button Content="Reference image…" Click="OpenReferenceImageMenu" Margin="0,0,0,6"/>
                     <Button Content="Face sketch plane" Click="ResetOrbit" ToolTip="Middle-drag the grid to orbit. Scroll to zoom."/>
                     <ComboBox x:Name="ProfileChoice" SelectionChanged="SelectProfile" Visibility="Collapsed" Margin="0,0,0,6"
                               AutomationProperties.Name="Sketch profile"/>

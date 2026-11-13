@@ -94,7 +94,9 @@ public sealed record Part(PartKind Kind, string Name, double Width, double Depth
                           [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
                           ProfileDimensions?[]? Dimensions = null,
                           [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-                          ProfileConstraint[]?[]? Constraints = null)
+                          ProfileConstraint[]?[]? Constraints = null,
+                          [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+                          SketchReferenceImage? ReferenceImage = null)
 {
     [JsonIgnore]
     internal IEnumerable<SketchPoint[]> SketchProfiles => Profile is null ? [] : new[] { Profile }.Concat(AdditionalProfiles ?? []);
@@ -272,7 +274,7 @@ public sealed record Bed(double X, double Y, double Z)
 
 public sealed record Project(int Version, Bed Bed, Part[] Parts)
 {
-    public bool IsValid() => Version is >= 1 and <= 21 && Bed is not null && Bed.IsValid() &&
+    public bool IsValid() => Version is >= 1 and <= 22 && Bed is not null && Bed.IsValid() &&
         Parts is not null && Parts.All(part => part is not null && part.IsValid() &&
             (Version >= 2 || part.Kind != PartKind.Extrusion) &&
             (Version >= 3 || part.Plane == SketchPlane.XY) &&
@@ -295,7 +297,8 @@ public sealed record Project(int Version, Bed Bed, Part[] Parts)
             (Version >= 18 || part.BevelCuts?.Any(cut => cut.Target.ProfileKind != ProfileBevelKind.None) != true) &&
             (Version >= 19 || part.Holes?.Any(hole => hole.Seat is not null) != true) &&
             (Version >= 20 || part.Dimensions is null) &&
-            (Version >= 21 || part.Constraints is null)) && ValidSketchLinks();
+            (Version >= 21 || part.Constraints is null) &&
+            (part.ReferenceImage is null || Version >= 22 && part.Kind == PartKind.Sketch && part.ReferenceImage.IsValid())) && ValidSketchLinks();
 
     private bool ValidSketchLinks()
     {

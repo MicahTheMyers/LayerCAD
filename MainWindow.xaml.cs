@@ -138,10 +138,10 @@ public partial class MainWindow : Window
 
     private void StartPlaneSketch(SketchPlane plane)
     {
-        OpenSketch(plane, null, (profiles, paths, _, dimensions, constraints) =>
+        OpenSketch(plane, null, (profiles, paths, _, dimensions, constraints, referenceImage) =>
         {
             var sketch = new Part(PartKind.Sketch, NextPartName(PartKind.Sketch), 0, 0, 0, 0, 0, 0, profiles.FirstOrDefault(), plane,
-                AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null, OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions, Constraints: constraints);
+                AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null, OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions, Constraints: constraints, ReferenceImage: referenceImage);
             AddFinishedSketch(sketch with { Z = -sketch.LocalBounds().Z });
         });
     }
@@ -153,11 +153,11 @@ public partial class MainWindow : Window
             SetStatus("Choose a face location within ±10,000 mm of the build-plate origin.");
             return;
         }
-        OpenSketch(SketchPlane.XY, null, (profiles, paths, _, dimensions, constraints) =>
+        OpenSketch(SketchPlane.XY, null, (profiles, paths, _, dimensions, constraints, referenceImage) =>
         {
             AddFinishedSketch(new Part(PartKind.Sketch, NextPartName(PartKind.Sketch), 0, 0,
                 0, origin.X, origin.Y, origin.Z, profiles.FirstOrDefault(), FaceFrame: surface.Frame,
-                AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null, OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions, Constraints: constraints));
+                AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null, OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions, Constraints: constraints, ReferenceImage: referenceImage));
         }, surface.Frame, surface.Guide(origin), origin);
     }
 
@@ -320,14 +320,14 @@ public partial class MainWindow : Window
         var sketch = part.Kind == PartKind.Extrusion && part.SketchId is Guid id
             ? parts.FirstOrDefault(item => item.Kind == PartKind.Sketch && item.SketchId == id) ?? part : part;
         int index = SelectedPartIndex;
-        OpenSketch(sketch.Plane, sketch, (profiles, paths, originalIndices, dimensions, constraints) =>
+        OpenSketch(sketch.Plane, sketch, (profiles, paths, originalIndices, dimensions, constraints, referenceImage) =>
         {
             var previous = sketch.SketchProfiles.ToArray();
             if (profiles.Length == previous.Length && originalIndices.SequenceEqual(Enumerable.Range(0, previous.Length)) &&
                 profiles.Zip(previous).All(pair => pair.First.SequenceEqual(pair.Second)) &&
                 paths.Length == (sketch.OpenPaths?.Length ?? 0) &&
                 paths.Zip(sketch.OpenPaths ?? []).All(pair => pair.First.SequenceEqual(pair.Second)) &&
-                (dimensions ?? []).SequenceEqual(sketch.Dimensions ?? []) && SameConstraints(constraints, sketch.Constraints))
+                (dimensions ?? []).SequenceEqual(sketch.Dimensions ?? []) && SameConstraints(constraints, sketch.Constraints) && Equals(referenceImage, sketch.ReferenceImage))
                 return;
             if (profiles.Length == 0 && paths.Length == 0)
             {
@@ -349,7 +349,7 @@ public partial class MainWindow : Window
                 parts.Add(new Part(PartKind.Sketch, NextPartName(PartKind.Sketch), 0, 0, 0,
                     sketch.X, sketch.Y, sketch.Z, profiles[0], sketch.Plane, sketch.FaceFrame,
                     SketchId: link, AdditionalProfiles: profiles.Length > 1 ? profiles[1..] : null,
-                    OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions, Constraints: constraints));
+                    OpenPaths: paths.Length > 0 ? paths : null, Dimensions: dimensions, Constraints: constraints, ReferenceImage: referenceImage));
                 MarkDirty();
                 RefreshParts(index);
                 SetStatus($"Updated the sketch for {part.Name}.");
@@ -375,7 +375,7 @@ public partial class MainWindow : Window
             {
                 if (item.Kind == PartKind.Sketch)
                     return item with { Profile = profiles.FirstOrDefault(), AdditionalProfiles = profiles.Length > 1 ? profiles[1..] : null,
-                        OpenPaths = paths.Length > 0 ? paths : null, Dimensions = dimensions, Constraints = constraints };
+                        OpenPaths = paths.Length > 0 ? paths : null, Dimensions = dimensions, Constraints = constraints, ReferenceImage = referenceImage };
                 int profileIndex = Array.IndexOf(originalIndices, item.SketchProfileIndex);
                 return profileIndex < 0
                     ? item with { SketchId = null, SketchProfileIndex = 0 }
@@ -389,7 +389,7 @@ public partial class MainWindow : Window
         (first?.Length ?? 0) == (second?.Length ?? 0) &&
         (first ?? []).Zip(second ?? []).All(pair => (pair.First ?? []).SequenceEqual(pair.Second ?? []));
 
-    private void OpenSketch(SketchPlane plane, Part? part, Action<SketchPoint[][], SketchPoint[][], int[], ProfileDimensions?[]?, ProfileConstraint[]?[]?> commit,
+    private void OpenSketch(SketchPlane plane, Part? part, Action<SketchPoint[][], SketchPoint[][], int[], ProfileDimensions?[]?, ProfileConstraint[]?[]?, SketchReferenceImage?> commit,
                             SketchFrame? faceFrame = null, (SketchPoint Start, SketchPoint End)[]? guide = null,
                             Point3D origin = default, int initialProfile = 0)
     {
@@ -407,11 +407,12 @@ public partial class MainWindow : Window
         var frame = faceFrame ?? new SketchFrame(SketchAxis.FromVector((Vector3D)plane.ToModel(1, 0, 0)),
             SketchAxis.FromVector((Vector3D)plane.ToModel(0, 1, 0)));
         editor.SetReferences(references, origin, frame, plateCorners, Math.Max(bed.X, bed.Y), distance);
+        editor.SetReferenceImage(part?.ReferenceImage);
         editor.Cancelled += CloseSketch;
         editor.Finished += (profile, paths) =>
         {
             CloseSketch();
-            commit(profile, paths, editor.OriginalProfileIndices, editor.FinishedDimensions, editor.FinishedConstraints);
+            commit(profile, paths, editor.OriginalProfileIndices, editor.FinishedDimensions, editor.FinishedConstraints, editor.ReferenceImage);
         };
         ShowSketchContent(editor);
     }
@@ -1929,7 +1930,7 @@ public partial class MainWindow : Window
         }
         try
         {
-            int version = parts.Any(part => part.Constraints is not null) ? 21 : parts.Any(part => part.Dimensions is not null) ? 20 :
+            int version = parts.Any(part => part.ReferenceImage is not null) ? 22 : parts.Any(part => part.Constraints is not null) ? 21 : parts.Any(part => part.Dimensions is not null) ? 20 :
                 parts.Any(part => part.Holes?.Any(hole => hole.Seat is not null) == true) ? 19 :
                 parts.Any(part => part.BevelCuts?.Any(cut => cut.Target.ProfileKind != ProfileBevelKind.None) == true) ? 18 :
                 parts.Any(part => part.OpenPaths is not null ||

@@ -96,7 +96,8 @@ internal static class ModelingMeshes
         return Connect(sections, fanCaps: true);
     }
 
-    public static List<Triangle>? Loft((Part Sketch, SketchPoint[] Profile)[] profiles)
+    public static List<Triangle>? Loft((Part Sketch, SketchPoint[] Profile)[] profiles,
+        (Part Sketch, SketchPoint[] Points)? guide = null)
     {
         if (profiles.Length < 2)
             return null;
@@ -104,6 +105,12 @@ internal static class ModelingMeshes
         var axis = Normal(profiles[0].Sketch);
         var horizontal = At(profiles[0].Sketch, new(1, 0)) - origin;
         var vertical = Vector3D.CrossProduct(axis, horizontal);
+        var rail = guide is { } path ? path.Points.Select(point => At(path.Sketch, point)).ToArray() : [];
+        if (rail.Length > 1 && Height(rail[0]) > Height(rail[^1]))
+            Array.Reverse(rail);
+        if (rail.Length > 0 && (rail.Length < 2 || rail.Zip(rail.Skip(1)).Any(pair =>
+                Height(pair.Second) - Height(pair.First) <= 1e-7)))
+            throw new ArgumentException("The guide must advance continuously across the profile planes.");
         var levels = new List<(double Height, Point3D[] World, List<(int A, int B, int C)> Cap)>();
         foreach (var (sketch, profile) in profiles)
         {
@@ -117,6 +124,13 @@ internal static class ModelingMeshes
             int seam = Enumerable.Range(0, world.Length)
                 .OrderByDescending(i => Vector3D.DotProduct(world[i] - origin, horizontal))
                 .ThenByDescending(i => Vector3D.DotProduct(world[i] - origin, vertical)).First();
+            if (rail.Length > 0)
+            {
+                var contact = RailAt(Height(world[0]));
+                seam = Enumerable.Range(0, world.Length).MinBy(i => (world[i] - contact).LengthSquared);
+                if ((world[seam] - contact).Length > 0.001)
+                    throw new ArgumentException("The guide must meet a vertex on every loft profile.");
+            }
             world = world.Skip(seam).Concat(world.Take(seam)).ToArray();
             int Index(int original)
             {
@@ -137,11 +151,39 @@ internal static class ModelingMeshes
             if (stations.Count == 0 || value - stations[^1] > 1e-12)
                 stations.Add(value);
         var sections = levels.Select((level, i) => stations.Select(t => Sample(level.World, fraction[i], t)).ToArray()).ToArray();
-        var mesh = Connect(sections, orient: false);
+        var guidedSections = new List<Point3D[]> { sections[0] };
+        for (int i = 1; i < sections.Length; i++)
+        {
+            double low = levels[i - 1].Height, high = levels[i].Height;
+            foreach (var point in rail.Where(point => Height(point) > low + 1e-7 && Height(point) < high - 1e-7))
+            {
+                double t = (Height(point) - low) / (high - low);
+                var start = sections[i - 1];
+                var end = sections[i];
+                var shift = point - (start[0] + (end[0] - start[0]) * t);
+                guidedSections.Add(start.Select((vertex, j) =>
+                    vertex + (end[j] - vertex) * t + shift * (0.5 + 0.5 * Math.Cos(Math.Tau * stations[j]))).ToArray());
+            }
+            guidedSections.Add(sections[i]);
+        }
+        var mesh = Connect(guidedSections.ToArray(), orient: false);
         Cap(0, facingUp: false);
         Cap(sections.Length - 1, facingUp: true);
         Orient(mesh);
         return mesh;
+
+        double Height(Point3D point) => Vector3D.DotProduct(point - origin, axis);
+
+        Point3D RailAt(double height)
+        {
+            for (int i = 1; i < rail.Length; i++)
+            {
+                double low = Height(rail[i - 1]), high = Height(rail[i]);
+                if (height >= low - 1e-7 && height <= high + 1e-7)
+                    return rail[i - 1] + (rail[i] - rail[i - 1]) * Math.Clamp((height - low) / (high - low), 0, 1);
+            }
+            throw new ArgumentException("The guide must reach every loft profile.");
+        }
 
         void Cap(int level, bool facingUp)
         {

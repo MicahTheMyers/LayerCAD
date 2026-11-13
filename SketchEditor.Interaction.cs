@@ -65,6 +65,14 @@ public partial class SketchEditor
 
     private void SketchKeyDown(object sender, KeyEventArgs e)
     {
+        if (calibratingImage && e.Key == Key.Escape)
+        {
+            calibratingImage = false;
+            calibrationStart = null;
+            Feedback.Text = "Image calibration canceled.";
+            e.Handled = true;
+            return;
+        }
         if (InlineDimension.IsKeyboardFocusWithin && e.Key is Key.Enter or Key.Escape)
             return;
         if (LayerClipboard.IsShortcut(e))
@@ -348,6 +356,11 @@ public partial class SketchEditor
             return;
         }
         var location = e.GetPosition(Drawing);
+        if (e.ChangedButton == MouseButton.Left && PickImageCalibrationPoint(location))
+        {
+            e.Handled = true;
+            return;
+        }
         if (!trimming && e.ChangedButton == MouseButton.Left && !Keyboard.Modifiers.HasFlag(ModifierKeys.Control) &&
             BeginInlineDimension(location))
         {

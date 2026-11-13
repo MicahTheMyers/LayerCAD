@@ -495,7 +495,7 @@ public partial class MainWindow
         var solid = sketch with
         {
             Kind = PartKind.Extrusion, Height = amount, Name = name, Hidden = false, Profile = profile,
-            AdditionalProfiles = null, OpenPaths = null, Dimensions = null, Constraints = null, SketchProfileIndex = profileIndex, SketchId = sketch.SketchId ?? Guid.NewGuid()
+            AdditionalProfiles = null, OpenPaths = null, Dimensions = null, Constraints = null, ReferenceImage = null, SketchProfileIndex = profileIndex, SketchId = sketch.SketchId ?? Guid.NewGuid()
         };
         if (!solid.IsValid())
             return null;
