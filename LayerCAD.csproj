@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <Version>1.0.15</Version>
+    <RepositoryUrl>https://github.com/MicahTheMyers/LayerCAD</RepositoryUrl>
+    <ApplicationIcon>Assets\LayerCAD.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\LayerCAD-mark.png;Assets\LayerCAD.ico" />
+    <Content Include="Native\LayerCadManifold.dll" TargetPath="LayerCadManifold.dll"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Native\THIRD-PARTY-Manifold.txt" TargetPath="THIRD-PARTY-Manifold.txt"
+          CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Update="THIRD-PARTY-LibTessDotNet.txt" ExcludeFromSingleFile="true" />
+    <PackageReference Include="LibTessDotNet" Version="1.1.15" />
+    <None Update="THIRD-PARTY-LibTessDotNet.txt" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="UpdateBundle" Value="$(PublishSingleFile)" />
+    <EmbeddedResource Include="Updates/Install-Update.ps1" />
+  </ItemGroup>
+
+</Project>

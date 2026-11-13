@@ -1,0 +1,429 @@
+<UserControl x:Class="LayerCAD.SketchEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:LayerCAD"
+             Background="#151A22" Foreground="#E7EDF6" Focusable="True" PreviewKeyDown="SketchKeyDown">
+    <UserControl.Resources>
+        <Style x:Key="ShapeButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="42"/>
+            <Setter Property="Height" Value="37"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style x:Key="SketchRibbonGroup" TargetType="Border">
+            <Setter Property="BorderBrush" Value="#455163"/>
+            <Setter Property="BorderThickness" Value="0,0,1,0"/>
+            <Setter Property="Padding" Value="6,0"/>
+        </Style>
+        <Style x:Key="SketchRibbonCaption" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+        <Style x:Key="OptionsPanel" TargetType="Border">
+            <Setter Property="Background" Value="#202838"/>
+            <Setter Property="BorderBrush" Value="#40506A"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="3"/>
+            <Setter Property="KeyboardNavigation.TabNavigation" Value="Cycle"/>
+        </Style>
+        <Style x:Key="DrawingOption" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="Background" Value="#202838"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#34516A"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter Property="BorderBrush" Value="#79B7D4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Top">
+            <TabControl Margin="0,0,0,8" Background="#252F3E" BorderBrush="#40506A" Padding="5">
+                <TabItem Header="SKETCH" FontSize="11" Padding="9,3" Style="{StaticResource WorkspaceTab}">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Right" Style="{StaticResource SketchRibbonGroup}" BorderThickness="1,0,0,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button x:Name="CancelButton" Content="Cancel Sketch" Background="#A63443" Click="Cancel"/>
+                                <Button x:Name="FinishButton" Background="#246A62" Margin="0" Click="Finish"
+                                        AutomationProperties.Name="Finish Sketch">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Data="M 2,7 L 6,11 L 13,3" Stroke="#D4F8E6" StrokeThickness="2" Width="16" Height="14" Margin="0,0,5,0"/>
+                                        <TextBlock Text="Finish Sketch"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                        <WrapPanel AutomationProperties.Name="Sketch tools">
+                            <Border Style="{StaticResource SketchRibbonGroup}">
+                                <StackPanel>
+                                    <WrapPanel x:Name="Tools" AutomationProperties.Name="Drawing tools">
+                                        <StackPanel Margin="0,0,2,0" MouseEnter="ShowDrawingOptions" MouseLeave="ScheduleOptionsClose">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button x:Name="PolylineButton" Tag="Polyline" Style="{StaticResource ShapeButton}"
+                                                        AutomationProperties.Name="Polyline" Click="SelectDefaultTool">
+                                                    <Path Data="M 3,19 L 3,8 L 11,12 L 20,3" Width="24" Height="24" Stretch="None" StrokeThickness="1.7"
+                                                          Stroke="#EDF3FC"/>
+                                                </Button>
+                                                <Button Grid.Column="1" Width="13" Style="{StaticResource ShapeButton}"
+                                                        Click="OpenDrawingOptions" ToolTip="Polyline options" AutomationProperties.Name="Polyline options">
+                                                    <Path Data="M 1,1 L 5,5 L 9,1" Stroke="#ADBACD" StrokeThickness="1.5"/>
+                                                </Button>
+                                            </Grid>
+                                            <Popup Placement="Bottom">
+                                                <Border Style="{StaticResource OptionsPanel}" MouseEnter="KeepOptionsOpen"
+                                                        MouseLeave="ScheduleOptionsClose" PreviewKeyDown="OptionsKeyDown">
+                                                    <StackPanel>
+                                                        <Button Content="Closed polyline" Tag="Polyline" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Orthogonal polyline" Tag="OrthogonalPolyline" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Cancel current placement" Tag="CancelPlacement" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Popup>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,2,0" MouseEnter="ShowDrawingOptions" MouseLeave="ScheduleOptionsClose">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button x:Name="CircleButton" Tag="Circle" Style="{StaticResource ShapeButton}"
+                                                        AutomationProperties.Name="Circle" Click="SelectDefaultTool">
+                                                    <Path Data="M 12,3 A 9,9 0 1 1 11.99,3 Z" Width="24" Height="24" Stretch="None" StrokeThickness="1.7"
+                                                          Stroke="#EDF3FC"/>
+                                                </Button>
+                                                <Button Grid.Column="1" Width="13" Style="{StaticResource ShapeButton}"
+                                                        Click="OpenDrawingOptions" ToolTip="Circle options" AutomationProperties.Name="Circle options">
+                                                    <Path Data="M 1,1 L 5,5 L 9,1" Stroke="#ADBACD" StrokeThickness="1.5"/>
+                                                </Button>
+                                            </Grid>
+                                            <Popup Placement="Bottom">
+                                                <Border Style="{StaticResource OptionsPanel}" MouseEnter="KeepOptionsOpen"
+                                                        MouseLeave="ScheduleOptionsClose" PreviewKeyDown="OptionsKeyDown">
+                                                    <StackPanel>
+                                                        <Button Content="Center and diameter" Tag="CenterDiameterCircle" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Two-point diameter" Tag="DiameterCircle" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Center and radius" Tag="Circle" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Three-point circle" Tag="ThreePointCircle" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Ellipse from bounding corners" Tag="Ellipse" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Popup>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,2,0" MouseEnter="ShowDrawingOptions" MouseLeave="ScheduleOptionsClose">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button x:Name="RectangleButton" Tag="Rectangle" Style="{StaticResource ShapeButton}"
+                                                        AutomationProperties.Name="Rectangle" Click="SelectDefaultTool">
+                                                    <Path Data="M 2,6 H 22 V 18 H 2 Z" Width="24" Height="24" Stretch="None" StrokeThickness="1.7"
+                                                          Stroke="#EDF3FC"/>
+                                                </Button>
+                                                <Button Grid.Column="1" Width="13" Style="{StaticResource ShapeButton}"
+                                                        Click="OpenDrawingOptions" ToolTip="Rectangle options" AutomationProperties.Name="Rectangle options">
+                                                    <Path Data="M 1,1 L 5,5 L 9,1" Stroke="#ADBACD" StrokeThickness="1.5"/>
+                                                </Button>
+                                            </Grid>
+                                            <Popup Placement="Bottom">
+                                                <Border Style="{StaticResource OptionsPanel}" MouseEnter="KeepOptionsOpen"
+                                                        MouseLeave="ScheduleOptionsClose" PreviewKeyDown="OptionsKeyDown">
+                                                    <StackPanel>
+                                                        <Button Content="Two corners" Tag="Rectangle" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Center and corner" Tag="CenteredRectangle" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Diamond" Tag="Diamond" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Three-point rectangle" Tag="AngledRectangle" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Center-to-center slot" Tag="Slot" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Popup>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,2,0" MouseEnter="ShowDrawingOptions" MouseLeave="ScheduleOptionsClose">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button x:Name="TriangleButton" Tag="Triangle" Style="{StaticResource ShapeButton}"
+                                                        AutomationProperties.Name="Triangle" Click="SelectDefaultTool">
+                                                    <Path Data="M 12,3 L 22,21 H 2 Z" Width="24" Height="24" Stretch="None" StrokeThickness="1.7"
+                                                          Stroke="#EDF3FC"/>
+                                                </Button>
+                                                <Button Grid.Column="1" Width="13" Style="{StaticResource ShapeButton}"
+                                                        Click="OpenDrawingOptions" ToolTip="Triangle options" AutomationProperties.Name="Triangle options">
+                                                    <Path Data="M 1,1 L 5,5 L 9,1" Stroke="#ADBACD" StrokeThickness="1.5"/>
+                                                </Button>
+                                            </Grid>
+                                            <Popup Placement="Bottom">
+                                                <Border Style="{StaticResource OptionsPanel}" MouseEnter="KeepOptionsOpen"
+                                                        MouseLeave="ScheduleOptionsClose" PreviewKeyDown="OptionsKeyDown">
+                                                    <StackPanel>
+                                                        <Button Content="Equilateral triangle" Tag="Triangle" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Right triangle" Tag="RightTriangle" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Popup>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,2,0" MouseEnter="ShowDrawingOptions" MouseLeave="ScheduleOptionsClose">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button x:Name="HexagonButton" Tag="Hexagon" Style="{StaticResource ShapeButton}"
+                                                        AutomationProperties.Name="Hexagon" Click="SelectDefaultTool">
+                                                    <Path Data="M 7,3 H 17 L 22,12 L 17,21 H 7 L 2,12 Z" Width="24" Height="24" Stretch="None" StrokeThickness="1.7"
+                                                          Stroke="#EDF3FC"/>
+                                                </Button>
+                                                <Button Grid.Column="1" Width="13" Style="{StaticResource ShapeButton}"
+                                                        Click="OpenDrawingOptions" ToolTip="Hexagon options" AutomationProperties.Name="Hexagon options">
+                                                    <Path Data="M 1,1 L 5,5 L 9,1" Stroke="#ADBACD" StrokeThickness="1.5"/>
+                                                </Button>
+                                            </Grid>
+                                            <Popup Placement="Bottom">
+                                                <Border Style="{StaticResource OptionsPanel}" MouseEnter="KeepOptionsOpen"
+                                                        MouseLeave="ScheduleOptionsClose" PreviewKeyDown="OptionsKeyDown">
+                                                    <StackPanel>
+                                                        <Button Content="Regular hexagon" Tag="Hexagon" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Regular pentagon" Tag="Pentagon" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                        <Button Content="Regular octagon" Tag="Octagon" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Popup>
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,2,0" MouseEnter="ShowDrawingOptions" MouseLeave="ScheduleOptionsClose">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button x:Name="ArcButton" Tag="ThreePointArc" Style="{StaticResource ShapeButton}"
+                                                        AutomationProperties.Name="Arc" ToolTip="Three-point arc" Click="SelectDefaultTool">
+                                                    <Path Data="M 3,18 Q 12,1 21,18" Width="24" Height="24" Stretch="None"
+                                                          Stroke="#EDF3FC" StrokeThickness="1.7"/>
+                                                </Button>
+                                                <Button Grid.Column="1" Width="13" Style="{StaticResource ShapeButton}"
+                                                        Click="OpenDrawingOptions" ToolTip="Arc options" AutomationProperties.Name="Arc options">
+                                                    <Path Data="M 1,1 L 5,5 L 9,1" Stroke="#ADBACD" StrokeThickness="1.5"/>
+                                                </Button>
+                                            </Grid>
+                                            <Popup Placement="Bottom">
+                                                <Border Style="{StaticResource OptionsPanel}" MouseEnter="KeepOptionsOpen"
+                                                        MouseLeave="ScheduleOptionsClose" PreviewKeyDown="OptionsKeyDown">
+                                                    <StackPanel>
+                                                        <Button Content="Three-point arc" Tag="ThreePointArc" Style="{StaticResource DrawingOption}" Click="SelectToolOption"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Popup>
+                                        </StackPanel>
+                                        <Button x:Name="SketchSplineButton" Click="BeginSketchSpline" Style="{StaticResource ShapeButton}"
+                                                AutomationProperties.Name="Fit Point Spline" ToolTip="Fit Point Spline">
+                                            <Path Data="M 2,19 C 9,19 5,5 12,8 S 19,18 23,3 M 1,18 H 3 V 20 H 1 Z M 11,7 H 13 V 9 H 11 Z M 22,2 H 24 V 4 H 22 Z"
+                                                  Width="25" Height="24" Stroke="#A9DFFF" StrokeThickness="1.4"/>
+                                        </Button>
+                                    </WrapPanel>
+                                    <Button Content="CREATE ▾" Style="{StaticResource SketchRibbonCaption}" Click="OpenSketchRibbonMenu"
+                                            AutomationProperties.Name="Create sketch geometry">
+                                        <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Line (L)" Tag="PolylineButton" Click="ChooseSketchRibbonTool"/>
+                                                <MenuItem Header="Rectangle" Tag="RectangleButton" Click="ChooseSketchRibbonTool"/>
+                                                <MenuItem Header="Circle" Tag="CircleButton" Click="ChooseSketchRibbonTool"/>
+                                                <MenuItem Header="Arc" Tag="ArcButton" Click="ChooseSketchRibbonTool"/>
+                                                <MenuItem Header="Fit Point Spline" Click="BeginSketchSpline"/>
+                                                <MenuItem Header="Triangle" Tag="TriangleButton" Click="ChooseSketchRibbonTool"/>
+                                                <MenuItem Header="Polygon" Tag="HexagonButton" Click="ChooseSketchRibbonTool"/>
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource SketchRibbonGroup}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="SketchTrimButton" Click="BeginSketchTrim" Style="{StaticResource ShapeButton}"
+                                                AutomationProperties.Name="Trim" ToolTip="Trim a sketch segment (T)">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Data="M 7,8 L 18,18 M 7,12 L 18,2 M 7,8 A 3,3 0 1 1 3,4 A 3,3 0 0 1 7,8 M 7,12 A 3,3 0 1 0 3,16 A 3,3 0 0 0 7,12"
+                                                      Width="20" Height="20" Stroke="#C5DAEE" StrokeThickness="1.4"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="SketchMoveButton" Click="BeginSketchMove" Style="{StaticResource ShapeButton}"
+                                                AutomationProperties.Name="Move sketch" ToolTip="Move sketch">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Data="M 2,10 H 18 M 5,7 L 2,10 L 5,13 M 15,7 L 18,10 L 15,13 M 10,2 V 18 M 7,5 L 10,2 L 13,5 M 7,15 L 10,18 L 13,15"
+                                                      Width="20" Height="20" Stroke="#C5DAEE" StrokeThickness="1.4"
+                                                      VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Click="BeginSketchOffset" Style="{StaticResource ShapeButton}"
+                                                AutomationProperties.Name="Offset" ToolTip="Offset a closed profile">
+                                            <Path Data="M 23,4 H 10 A 8,8 0 0 0 10,20 H 23 M 23,8 H 10 A 4,4 0 0 0 10,16 H 23"
+                                                  Width="25" Height="24" Stroke="#A9DFFF" StrokeThickness="1.4"/>
+                                        </Button>
+                                        <Button Click="BeginSketchFillet" Style="{StaticResource ShapeButton}"
+                                                AutomationProperties.Name="Sketch Fillet" ToolTip="Round a selected sketch vertex">
+                                            <Path Data="M 3,22 V 14 A 11,11 0 0 1 14,3 H 23 M 3,9 V 3 H 9"
+                                                  Width="25" Height="24" Stroke="#A9DFFF" StrokeThickness="1.4"/>
+                                        </Button>
+                                    </StackPanel>
+                                    <Button Content="MODIFY ▾" Style="{StaticResource SketchRibbonCaption}" Click="OpenSketchRibbonMenu"
+                                            AutomationProperties.Name="Modify sketch geometry">
+                                        <Button.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Trim (T)" Click="BeginSketchTrim"/>
+                                                <MenuItem Header="Break Open Path" Click="BeginSketchBreak"/>
+                                                <MenuItem Header="Move" Click="BeginSketchMove"/>
+                                                <MenuItem Header="Offset…" Click="BeginSketchOffset"/>
+                                                <MenuItem Header="Sketch Fillet…" Click="BeginSketchFillet"/>
+                                                <MenuItem Header="Sketch Scale…" Click="BeginSketchScale"/>
+                                                <MenuItem Header="Equal Distance Chamfer…" Click="BeginSketchChamfer"/>
+                                            </ContextMenu>
+                                        </Button.ContextMenu>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0">
+                                <Button x:Name="UndoSketchButton" Style="{StaticResource HistoryButton}" Content="Undo" Click="UndoSketch" IsEnabled="False" ToolTip="Undo (Ctrl+Z)"/>
+                                <Button x:Name="RedoSketchButton" Style="{StaticResource HistoryButton}" Content="Redo" Click="RedoSketch" IsEnabled="False" ToolTip="Redo (Ctrl+Y)"/>
+                            </StackPanel>
+                        </WrapPanel>
+                    </DockPanel>
+                </TabItem>
+            </TabControl>
+            <TextBlock x:Name="PlaneTitle" Style="{StaticResource Muted}" Margin="0,0,0,4"/>
+            <TextBlock x:Name="ToolHint" TextWrapping="Wrap" Margin="0,0,0,12"
+                       AutomationProperties.LiveSetting="Polite"/>
+            <Button x:Name="EndPolylineButton" Content="End polyline" Click="EndOpenPolyline" Visibility="Collapsed"
+                    HorizontalAlignment="Left" Margin="0,0,0,8" ToolTip="Keep the placed segments as an open path (Esc)"/>
+            <Border x:Name="SketchMovePanel" Visibility="Collapsed" Background="#202838" BorderBrush="#40506A"
+                    BorderThickness="1" Padding="8,4" Margin="0,0,0,10">
+                <WrapPanel VerticalAlignment="Center">
+                    <Label x:Name="SketchMoveULabel" Target="{Binding ElementName=SketchMoveU}" Foreground="#ADBACD"/>
+                    <TextBox x:Name="SketchMoveU" Width="82" Margin="0,1,8,1" TextChanged="SketchMoveInputChanged"/>
+                    <Label x:Name="SketchMoveVLabel" Target="{Binding ElementName=SketchMoveV}" Foreground="#ADBACD"/>
+                    <TextBox x:Name="SketchMoveV" Width="82" Margin="0,1,12,1" TextChanged="SketchMoveInputChanged"/>
+                    <Button x:Name="ApplySketchMoveButton" Content="Apply move" Click="ApplySketchMove" Padding="8,5" Background="#246A62"/>
+                    <Button Content="Cancel move" Click="CancelSketchMove" Padding="8,5" Margin="0"/>
+                </WrapPanel>
+            </Border>
+        </StackPanel>
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <TextBlock x:Name="Feedback" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,12,0"/>
+        </DockPanel>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="224"/>
+            </Grid.ColumnDefinitions>
+            <Grid ClipToBounds="True" Background="#101620">
+                <Viewport3D IsHitTestVisible="False" ClipToBounds="True">
+                    <Viewport3D.Camera>
+                        <PerspectiveCamera x:Name="ReferenceCamera" FieldOfView="45" NearPlaneDistance="0.5" FarPlaneDistance="100000"/>
+                    </Viewport3D.Camera>
+                    <ModelVisual3D x:Name="ReferenceScene"/>
+                </Viewport3D>
+                <Canvas x:Name="SketchGrid" IsHitTestVisible="False">
+                    <Path x:Name="SketchGridLines"/>
+                    <Path x:Name="SketchGridAxes"/>
+                </Canvas>
+                <Canvas x:Name="Drawing" Background="Transparent"
+                        SizeChanged="RedrawOnResize" MouseWheel="ZoomSketch"
+                        MouseMove="PreviewFromGrid" MouseLeave="ClearPreview" MouseDown="BeginOrbit"
+                        MouseUp="EndOrbit" LostMouseCapture="LoseOrbit"/>
+                <local:SketchMeasurements x:Name="Measurements" IsHitTestVisible="False"/>
+                <Path x:Name="SketchEdgeHover" StrokeThickness="3" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                      IsHitTestVisible="False"/>
+                <Path x:Name="SketchSelectionOutline" Stroke="#7DD3FC" Fill="#227DD3FC"
+                      StrokeDashArray="4 2" IsHitTestVisible="False"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10">
+                    <RadioButton x:Name="SketchSelectButton" Content="Select" GroupName="SketchSelection"
+                                 Click="ChangeSketchSelectionMode" Foreground="#E7EDF6" Margin="0,0,12,0"
+                                 ToolTip="Click or drag a box to select drawings."/>
+                    <RadioButton x:Name="SketchLassoButton" Content="Lasso" GroupName="SketchSelection"
+                                 Click="ChangeSketchSelectionMode" Foreground="#E7EDF6"
+                                 ToolTip="Drag a freehand loop to select drawings."/>
+                </StackPanel>
+                <Canvas>
+                    <TextBox x:Name="InlineDimension" Visibility="Collapsed" Width="85" Margin="0"
+                             PreviewKeyDown="InlineDimensionKeyDown" LostKeyboardFocus="InlineDimensionLostFocus"
+                             AutomationProperties.Name="Sketch dimension"/>
+                </Canvas>
+                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12">
+                    <local:ViewCube x:Name="SketchViewCube" Width="96" Height="96"
+                                    AutomationProperties.Name="View cube"
+                                    ToolTip="Middle-drag to orbit. Click a face, edge, or corner to snap."/>
+                    <Button Content="Reset view" Click="ResetSketchView" Margin="0"
+                            Padding="8,4" FontSize="12" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+            <DockPanel Grid.Column="1" Margin="13,0,0,0">
+                <StackPanel DockPanel.Dock="Top">
+                    <TextBlock Text="Vertices" Style="{StaticResource Heading}"/>
+                    <Button Content="Face sketch plane" Click="ResetOrbit" ToolTip="Middle-drag the grid to orbit. Scroll to zoom."/>
+                    <ComboBox x:Name="ProfileChoice" SelectionChanged="SelectProfile" Visibility="Collapsed" Margin="0,0,0,6"
+                              AutomationProperties.Name="Sketch profile"/>
+                    <StackPanel x:Name="DimensionInputs" Visibility="Collapsed" Margin="0,0,0,8">
+                        <Label x:Name="DimensionALabel" Target="{Binding ElementName=DimensionA}" Foreground="#ADBACD" Padding="0"/>
+                        <TextBox x:Name="DimensionA" TextChanged="DimensionChanged" GotKeyboardFocus="HighlightDimension"
+                                 PreviewMouseLeftButtonDown="FocusDimensionFromClick"/>
+                        <Label x:Name="DimensionBLabel" Target="{Binding ElementName=DimensionB}" Foreground="#ADBACD" Padding="0"/>
+                        <TextBox x:Name="DimensionB" TextChanged="DimensionChanged" GotKeyboardFocus="HighlightDimension"
+                                 PreviewMouseLeftButtonDown="FocusDimensionFromClick"/>
+                        <TextBlock Style="{StaticResource Muted}" Text="Tab cycles lengths Â· Esc stops drawing" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel x:Name="VertexInputs">
+                        <UniformGrid Columns="2">
+                            <StackPanel Margin="0,0,6,0">
+                                <Label x:Name="HorizontalLabel" Target="{Binding ElementName=InputX}" Foreground="#ADBACD" Padding="0"/>
+                                <TextBox x:Name="InputX"/>
+                            </StackPanel>
+                            <StackPanel>
+                                <Label x:Name="VerticalLabel" Target="{Binding ElementName=InputY}" Foreground="#ADBACD" Padding="0"/>
+                                <TextBox x:Name="InputY"/>
+                            </StackPanel>
+                        </UniformGrid>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <Button x:Name="PlacePointButton" Content="Add point" Click="AddPoint"/>
+                            <Button Content="Move selected" Click="MovePoint" Margin="0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel x:Name="VertexActions" DockPanel.Dock="Bottom">
+                    <Button Content="Remove selected point" Click="RemovePoint" Margin="0,8,0,8"/>
+                </StackPanel>
+                <ListBox x:Name="PointList" SelectionChanged="SelectPoint" Background="#141B25"
+                         Foreground="#EDF3FC" BorderBrush="#40506A" AutomationProperties.Name="Sketch vertices"/>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</UserControl>
+
+
+
+

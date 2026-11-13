@@ -1,0 +1,33 @@
+name: Windows release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build portable executable
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') { throw 'Use a vMAJOR.MINOR.PATCH tag.' }
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          dotnet publish LayerCAD.csproj -c Release -r win-x64 --self-contained true -p:Version=$version -p:PublishSingleFile=true -p:IncludeAllContentForSelfExtract=true -p:DebugType=None -o bin/release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Rename-Item bin/release/LayerCAD.exe "LayerCAD-$version-win-x64.exe"
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          gh release create $env:GITHUB_REF_NAME "bin/release/LayerCAD-$version-win-x64.exe" "bin/release/THIRD-PARTY-Manifold.txt" "bin/release/THIRD-PARTY-LibTessDotNet.txt" --verify-tag --generate-notes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

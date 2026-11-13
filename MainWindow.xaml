@@ -1,0 +1,751 @@
+<Window x:Class="LayerCAD.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:LayerCAD"
+        Title="LayerCAD" Width="1250" Height="800" MinWidth="940" MinHeight="660"
+        Icon="Assets/LayerCAD.ico"
+        Background="#151A22" Foreground="#E7EDF6" FontFamily="Segoe UI" FontSize="14"
+        PreviewKeyDown="HandleWorkspaceKey">
+    <Grid>
+    <DockPanel x:Name="Workspace">
+        <Border DockPanel.Dock="Top" Background="#202838" Padding="16,12">
+            <DockPanel LastChildFill="False">
+                <Menu VerticalAlignment="Center" Background="#202838" Foreground="#E7EDF6" Margin="0,0,14,0">
+                    <Menu.Resources>
+                        <Style TargetType="MenuItem">
+                            <Setter Property="Foreground" Value="#EDF3FC"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="MenuItem">
+                                        <Border x:Name="MenuRow" Background="Transparent" Padding="12,7">
+                                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsHighlighted" Value="True">
+                                                <Setter TargetName="MenuRow" Property="Background" Value="#34516A"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </Menu.Resources>
+                    <MenuItem x:Name="FileMenu" Header="_File" Padding="10,7" Background="#293345">
+                        <MenuItem.Template>
+                            <ControlTemplate TargetType="MenuItem">
+                                <Grid>
+                                    <Border x:Name="FileButton" Background="{TemplateBinding Background}"
+                                            BorderBrush="#40506A" BorderThickness="1" Padding="{TemplateBinding Padding}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
+                                            <Path Data="M 0,0 L 4,4 L 8,0" Stroke="#ADBACD" StrokeThickness="1.4"
+                                                  Margin="7,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
+                                           IsOpen="{TemplateBinding IsSubmenuOpen}">
+                                        <Border Background="#202838" BorderBrush="#40506A" BorderThickness="1"
+                                                MinWidth="155" Padding="3">
+                                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                        </Border>
+                                    </Popup>
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsHighlighted" Value="True">
+                                        <Setter TargetName="FileButton" Property="Background" Value="#34516A"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </MenuItem.Template>
+                        <MenuItem Header="_New" Click="NewProject"/>
+                        <MenuItem Header="_Open…" Click="OpenProject"/>
+                        <MenuItem Header="_Save" Click="SaveProject"/>
+                        <MenuItem Header="Check for _Updates…" Click="CheckForUpdatesClick"/>
+                        <Separator/>
+                        <MenuItem Header="_Import STL…" Click="ImportStl"/>
+                    </MenuItem>
+                </Menu>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Image Source="Assets/LayerCAD-mark.png" Width="46" Height="46" Margin="0,0,9,0"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="LayerCAD" FontSize="22" FontWeight="Bold" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Button DockPanel.Dock="Right" x:Name="SettingsButton" Click="OpenSettings"
+                        Width="38" Height="35" Padding="0" Margin="0"
+                        AutomationProperties.Name="Settings" ToolTip="Settings">
+                    <Path Data="F0 M 8.94,4.61 L 10.07,4.24 L 10.11,1.67 L 13.89,1.67 L 13.93,4.24 L 15.06,4.61 L 16.13,5.15 L 17.97,3.36 L 20.64,6.03 L 18.85,7.87 L 19.39,8.94 L 19.76,10.07 L 22.33,10.11 L 22.33,13.89 L 19.76,13.93 L 19.39,15.06 L 18.85,16.13 L 20.64,17.97 L 17.97,20.64 L 16.13,18.85 L 15.06,19.39 L 13.93,19.76 L 13.89,22.33 L 10.11,22.33 L 10.07,19.76 L 8.94,19.39 L 7.87,18.85 L 6.03,20.64 L 3.36,17.97 L 5.15,16.13 L 4.61,15.06 L 4.24,13.93 L 1.67,13.89 L 1.67,10.11 L 4.24,10.07 L 4.61,8.94 L 5.15,7.87 L 3.36,6.03 L 6.03,3.36 L 7.87,5.15 Z M 12,7.8 A 4.2,4.2 0 1 0 12,16.2 A 4.2,4.2 0 1 0 12,7.8 Z"
+                          Width="23" Height="23" Stretch="Uniform" Fill="#DDE7F5"/>
+                </Button>
+                <Button DockPanel.Dock="Right" Content="Export selected STL…" Click="ExportStl" Background="#246A62"/>
+            </DockPanel>
+        </Border>
+        <TabControl x:Name="BuildRibbon" DockPanel.Dock="Top" Margin="16,0,16,0"
+            Background="#252F3E" BorderBrush="#40506A" Padding="5">
+            <TabControl.Resources>
+                <Style x:Key="RibbonTool" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                    <Setter Property="Width" Value="41"/>
+                    <Setter Property="Height" Value="37"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                </Style>
+                <Style x:Key="RibbonGroup" TargetType="Border">
+                    <Setter Property="BorderBrush" Value="#455163"/>
+                    <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                    <Setter Property="Padding" Value="6,0"/>
+                </Style>
+                <Style x:Key="RibbonCaption" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                    <Setter Property="FontSize" Value="10"/>
+                    <Setter Property="Padding" Value="6,2"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                </Style>
+                <Style x:Key="RibbonMenuIcon" TargetType="Path">
+                    <Setter Property="Width" Value="16"/>
+                    <Setter Property="Height" Value="16"/>
+                    <Setter Property="Stroke" Value="#A9DFFF"/>
+                    <Setter Property="StrokeThickness" Value="1.35"/>
+                    <Setter Property="StrokeLineJoin" Value="Round"/>
+                </Style>
+                <Style TargetType="MenuItem">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="MenuItem">
+                                <Border x:Name="Row" Padding="7,4,12,4" Background="Transparent">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ContentPresenter ContentSource="Icon" Width="20" Margin="0,0,7,0"/>
+                                        <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
+                                    </StackPanel>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsHighlighted" Value="True">
+                                        <Setter TargetName="Row" Property="Background" Value="#3D546A"/>
+                                    </Trigger>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter TargetName="Row" Property="Opacity" Value="0.45"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+                <Style TargetType="ContextMenu">
+                    <Setter Property="Background" Value="#252F3E"/>
+                    <Setter Property="Foreground" Value="#EDF3FC"/>
+                    <Setter Property="BorderBrush" Value="#53657B"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ContextMenu">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="1" Padding="2">
+                                    <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TabControl.Resources>
+            <TabItem Header="BUILD MODE" FontSize="11" Padding="9,3" Style="{StaticResource WorkspaceTab}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <WrapPanel AutomationProperties.Name="Build tools">
+                        <Border Style="{StaticResource RibbonGroup}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource RibbonTool}" Click="CreateSketch" ToolTip="Create Sketch on a plane or face"
+                                        AutomationProperties.Name="Create Sketch">
+                                        <Grid Width="30" Height="30">
+                                            <Path Data="M 3,4 H 22 V 22 H 3 Z" Fill="#548DB4" Stretch="None"/>
+                                            <Path Data="M 4,23 V 5 H 23 M 8,20 L 12,18 L 23,7 L 20,4 L 9,15 Z M 24,17 V 27 M 19,22 H 29" Stroke="#A9EEC1" StrokeThickness="1.5" Stretch="None"
+                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Grid>
+                                    </Button>
+                                    <Button Style="{StaticResource RibbonTool}" Click="BeginFaceExtrude" ToolTip="Extrude (Ctrl+E)"
+                                        AutomationProperties.Name="Extrude">
+                                        <Grid Width="30" Height="30">
+                                            <Path Data="M 3,13 L 13,8 L 23,13 V 23 L 13,28 L 3,23 Z" Fill="#548DB4" Stretch="None"/>
+                                            <Path Data="M 3,13 L 13,18 L 23,13 M 13,18 V 28 M 26,17 V 3 M 22,7 L 26,3 L 29,7" Stroke="#BDE6FF" StrokeThickness="1.5" Stretch="None"
+                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Grid>
+                                    </Button>
+                                    <Button Tag="Revolve" Style="{StaticResource RibbonTool}" Click="OpenModelingTool" ToolTip="Revolve a sketch profile"
+                                        AutomationProperties.Name="Revolve">
+                                        <Grid Width="30" Height="30">
+                                            <Path Data="M 7,9 H 19 V 24 H 7 Z" Fill="#548DB4" Stretch="None"/>
+                                            <Path Data="M 13,4 V 27 M 5,16 C 0,19 4,24 15,24 C 25,24 30,20 24,16 M 21,13 L 24,16 L 22,19" Stroke="#BDE6FF" StrokeThickness="1.5" Stretch="None"
+                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Grid>
+                                    </Button>
+                                    <Button Style="{StaticResource RibbonTool}" Click="BeginHole" ToolTip="Create a hole on a flat face"
+                                        AutomationProperties.Name="Hole">
+                                        <Grid Width="30" Height="30">
+                                            <Path Data="M 3,12 L 16,7 L 27,13 V 22 L 15,27 L 3,21 Z" Fill="#548DB4" Stretch="None"/>
+                                            <Path Data="M 3,12 L 15,18 L 27,13 M 15,18 V 27 M 16,2 V 10 M 12,6 L 16,10 L 20,6 M 11,13 Q 16,9 21,13 Q 16,17 11,13" Stroke="#BDE6FF" StrokeThickness="1.5" Stretch="None"
+                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Grid>
+                                    </Button>
+                                    <Button Style="{StaticResource RibbonTool}" Click="BeginThread" ToolTip="Model a thread on a round surface"
+                                        AutomationProperties.Name="Thread">
+                                        <Grid Width="30" Height="30">
+                                            <Path Data="M 7,6 Q 15,1 23,6 V 23 Q 15,28 7,23 Z" Fill="#548DB4" Stretch="None"/>
+                                            <Path Data="M 7,6 Q 15,11 23,6 M 7,11 L 23,8 M 7,16 L 23,13 M 7,21 L 23,18 M 7,23 Q 15,28 23,23" Stroke="#BDE6FF" StrokeThickness="1.5" Stretch="None"
+                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Grid>
+                                    </Button>
+                                </StackPanel>
+                                <Button x:Name="ModelToolsButton" Style="{StaticResource RibbonCaption}" Content="CREATE ▾"
+                                    Click="OpenModelingMenu" AutomationProperties.Name="Create tools">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Revolve…" Tag="Revolve" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 8,2 V 15 M 3,5 H 12 V 12 H 3 Z M 2,10 C 0,15 15,16 14,9 M 11,10 L 14,8 L 15,11"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Sweep…" Tag="Sweep" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,12 C 8,13 6,4 14,4 M 1,10 H 5 V 15 H 1 Z M 12,2 L 15,4 L 12,6"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Loft…" Tag="Loft" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,13 L 8,15 L 15,13 L 8,11 Z M 5,4 L 8,5 L 12,4 L 8,2 Z M 5,4 L 2,13 M 12,4 L 15,13"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <Separator/>
+                                            <MenuItem Header="Rib…" Tag="Rib" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,13 H 15 M 4,12 V 3 L 13,12 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Web…" Tag="Web" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,3 H 14 V 14 H 2 Z M 2,3 L 14,14 M 14,3 L 2,14 M 8,3 V 14"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Coil…" Tag="Coil" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 4,4 C 4,0 14,1 13,4 S 3,8 3,5 M 3,8 C 3,5 14,5 13,8 S 3,12 3,9 M 3,12 C 3,9 14,9 13,12 S 3,16 3,13"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Pipe…" Tag="Pipe" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 3,13 V 7 Q 3,3 7,3 H 13 M 7,13 V 8 Q 7,7 8,7 H 13 M 13,3 A 2,2 0 0 1 13,7 A 2,2 0 0 1 13,3 M 3,13 Q 5,16 7,13"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource RibbonGroup}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource RibbonTool}" Click="BeginBevel" ToolTip="Bevel (Ctrl+B)"
+                                        AutomationProperties.Name="Bevel">
+                                        <Grid Width="30" Height="30">
+                                            <Path Data="M 4,6 H 17 L 25,14 V 25 H 4 Z" Fill="#548DB4" Stretch="None"/>
+                                            <Path Data="M 4,6 H 17 L 25,14 V 25 H 4 Z M 17,6 V 14 H 25" Stroke="#D3E8FA" StrokeThickness="1.5" Stretch="None"
+                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Grid>
+                                    </Button>
+                                    <Button Style="{StaticResource RibbonTool}" Click="BeginMove" ToolTip="Move selected bodies"
+                                        AutomationProperties.Name="Move">
+                                        <Grid Width="30" Height="30">
+                                            <Path Data="M 12,12 H 18 V 18 H 12 Z" Fill="#548DB4" Stretch="None"/>
+                                            <Path Data="M 3,15 H 27 M 7,11 L 3,15 L 7,19 M 23,11 L 27,15 L 23,19 M 15,3 V 27 M 11,7 L 15,3 L 19,7 M 11,23 L 15,27 L 19,23" Stroke="#E6EDF6" StrokeThickness="1.5" Stretch="None"
+                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Grid>
+                                    </Button>
+                                </StackPanel>
+                                <Button x:Name="ModifyToolsButton" Style="{StaticResource RibbonCaption}" Content="MODIFY ▾" Click="OpenModelingMenu"
+                                    AutomationProperties.Name="Modify tools">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Linear Pattern…" Tag="Pattern" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 1,3 H 5 V 7 H 1 Z M 7,3 H 11 V 7 H 7 Z M 1,9 H 5 V 13 H 1 Z M 7,9 H 11 V 13 H 7 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Combine…" Tag="Combine" Click="OpenSolidModify">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,2 H 10 V 10 H 2 Z M 6,6 H 14 V 14 H 6 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Shell…" Tag="Shell" Click="OpenSolidModify">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,3 V 13 L 8,15 L 14,13 V 3 M 2,3 L 8,5 L 14,3 L 8,1 Z M 5,3 L 8,4 L 11,3 L 8,2 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Split Body…" Tag="Split Body" Click="OpenSolidModify">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 1,4 H 6 V 13 H 1 Z M 10,4 H 15 V 13 H 10 Z M 8,1 V 15"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Scale…" Tag="Scale" Click="OpenSolidModify">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 2,8 H 8 V 14 H 2 Z M 9,2 H 14 V 7 M 14,2 L 8,8"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Circular Pattern…" Tag="Circular Pattern" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 8,1 A 7,7 0 0 1 15,8 M 8,15 A 7,7 0 0 1 1,8 M 4,2 L 8,1 L 7,5 M 12,14 L 8,15 L 9,11 M 7,7 H 9 V 9 H 7 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Circular Hole Pattern…" Tag="Hole Pattern" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 8,1 A 7,7 0 1 1 7.99,1 M 8,3 A 1,1 0 1 1 7.99,3 M 4,8 A 1,1 0 1 1 3.99,8 M 12,8 A 1,1 0 1 1 11.99,8 M 8,12 A 1,1 0 1 1 7.99,12"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Mirror…" Tag="Mirror" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 8,1 V 15 M 2,4 L 6,12 H 2 Z M 14,4 L 10,12 H 14 Z"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource RibbonGroup}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Tag="Box" Style="{StaticResource RibbonTool}" Click="OpenModelingTool" ToolTip="Create a box"
+                                        AutomationProperties.Name="Box">
+                                        <Grid Width="30" Height="30">
+                                            <Path Data="M 3,9 L 15,3 L 27,9 V 22 L 15,28 L 3,22 Z" Fill="#548DB4" Stretch="None"/>
+                                            <Path Data="M 3,9 L 15,15 L 27,9 M 15,15 V 28" Stroke="#BDE6FF" StrokeThickness="1.5" Stretch="None"
+                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Grid>
+                                    </Button>
+                                    <Button Tag="Cylinder" Style="{StaticResource RibbonTool}" Click="OpenModelingTool" ToolTip="Create a cylinder"
+                                        AutomationProperties.Name="Cylinder">
+                                        <Grid Width="30" Height="30">
+                                            <Path Data="M 5,8 A 10,4 0 0 1 25,8 V 23 A 10,4 0 0 1 5,23 Z" Fill="#548DB4" Stretch="None"/>
+                                            <Path Data="M 5,8 A 10,4 0 1 0 25,8 M 5,23 A 10,4 0 0 0 25,23" Stroke="#BDE6FF" StrokeThickness="1.5" Stretch="None"
+                                                StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Grid>
+                                    </Button>
+                                </StackPanel>
+                                <Button x:Name="PrimitiveToolsButton" Style="{StaticResource RibbonCaption}" Content="PRIMITIVES ▾"
+                                    Click="OpenModelingMenu" AutomationProperties.Name="Primitives">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Box…" Tag="Box" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 1,5 L 8,1 L 15,5 V 11 L 8,15 L 1,11 Z M 1,5 L 8,9 L 15,5 M 8,9 V 15"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Cylinder…" Tag="Cylinder" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 3,4 A 5,2.5 0 1 1 13,4 A 5,2.5 0 1 1 3,4 M 3,4 V 12 A 5,2.5 0 0 0 13,12 V 4"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Sphere…" Tag="Sphere" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 8,1 A 7,7 0 1 1 7.99,1 M 8,1 A 3,7 0 1 1 7.99,1 M 1,8 Q 8,12 15,8"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                            <MenuItem Header="Torus…" Tag="Torus" Click="OpenModelingTool">                                                 <MenuItem.Icon>                                                     <Path Style="{StaticResource RibbonMenuIcon}" Data="M 8,3 A 7,5 0 1 1 7.99,3 M 8,6 A 3,2 0 1 1 7.99,6"/>                                                 </MenuItem.Icon>                                             </MenuItem>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource RibbonGroup}">
+                            <StackPanel>
+                                <Button Style="{StaticResource RibbonTool}" Click="BeginOffsetPlane" ToolTip="Sketch on an offset plane"
+                                        AutomationProperties.Name="Sketch on Offset Plane">
+                                    <Grid Width="30" Height="30">
+                                        <Path Data="M 3,19 L 18,12 L 28,17 L 13,24 Z" Fill="#548DB4"/>
+                                        <Path Data="M 3,12 L 18,5 L 28,10 L 13,17 Z M 15,19 V 7 M 12,10 L 15,7 L 18,10"
+                                              Stroke="#B2EAD0" StrokeThickness="1.5"/>
+                                    </Grid>
+                                </Button>
+                                <TextBlock Text="CONSTRUCT" FontSize="10" HorizontalAlignment="Center" Margin="4,2"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource RibbonGroup}">
+                            <StackPanel>
+                                <Button x:Name="MeasureButton" Style="{StaticResource RibbonTool}" Click="BeginMeasure"
+                                        ToolTip="Measure distance between two points" AutomationProperties.Name="Measure">
+                                    <Grid Width="30" Height="30">
+                                        <Path Data="M 2,12 H 28 V 23 H 2 Z" Fill="#D5A756"/>
+                                        <Path Data="M 6,12 V 19 M 10,12 V 16 M 15,12 V 19 M 20,12 V 16 M 24,12 V 19"
+                                              Stroke="#443522" StrokeThickness="1.4"/>
+                                    </Grid>
+                                </Button>
+                                <TextBlock Text="INSPECT" FontSize="10" HorizontalAlignment="Center" Margin="4,2"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource RibbonGroup}">
+                            <StackPanel>
+                                <Button Style="{StaticResource RibbonTool}" Click="ImportStl" ToolTip="Import an STL mesh"
+                                        AutomationProperties.Name="Import STL">
+                                    <Grid Width="30" Height="30">
+                                        <Path Data="M 11,9 L 20,5 L 28,9 V 22 L 20,27 L 11,22 Z" Fill="#548DB4"/>
+                                        <Path Data="M 11,9 L 20,13 L 28,9 M 20,13 V 27 M 2,16 H 15 M 11,12 L 15,16 L 11,20"
+                                              Stroke="#BDE6FF" StrokeThickness="1.5"/>
+                                    </Grid>
+                                </Button>
+                                <TextBlock Text="INSERT" FontSize="10" HorizontalAlignment="Center" Margin="4,2"/>
+                            </StackPanel>
+                        </Border>
+                        <StackPanel x:Name="SketchSelectionPanel" Orientation="Horizontal" Visibility="Collapsed" Margin="10,0,0,0">
+                            <StackPanel x:Name="OriginPlaneTools" Orientation="Horizontal">
+                                <TextBlock Text="Origin planes" Style="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <Button Content="XY" Tag="XY" Padding="7,5" Click="ChooseStandardPlane"
+                                    AutomationProperties.Name="XY plane"/>
+                                <Button Content="XZ" Tag="XZ" Padding="7,5" Click="ChooseStandardPlane"
+                                    AutomationProperties.Name="XZ plane"/>
+                                <Button Content="YZ" Tag="YZ" Padding="7,5" Click="ChooseStandardPlane"
+                                    AutomationProperties.Name="YZ plane"/>
+                            </StackPanel>
+                            <Button x:Name="CancelSurfaceButton" Content="Cancel Sketch" Background="#A63443"
+                                Click="CancelSurfaceSelection" Margin="0"/>
+                        </StackPanel>
+                    </WrapPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,2,0,0">
+                        <Button x:Name="UndoButton" Style="{StaticResource HistoryButton}" Content="Undo" Click="UndoProject" ToolTip="Undo (Ctrl+Z)" IsEnabled="False"/>
+                        <Button x:Name="RedoButton" Style="{StaticResource HistoryButton}" Content="Redo" Click="RedoProject" ToolTip="Redo (Ctrl+Y)" IsEnabled="False"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+        </TabControl>
+        <Border DockPanel.Dock="Bottom" Background="#202838" Padding="16,9">
+            <TextBlock x:Name="Status" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+        </Border>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="PartsColumn" Width="232"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <DockPanel x:Name="PartsPane" Margin="15">
+                <StackPanel DockPanel.Dock="Top">
+                    <DockPanel Margin="0,0,0,9">
+                        <Button x:Name="PartsSectionButton" DockPanel.Dock="Right" Click="TogglePartsSection"
+                                Width="26" Height="24" Padding="0" Margin="0"
+                                AutomationProperties.Name="Hide Parts section" ToolTip="Hide Parts section">
+                            <Path Data="M 7,1 L 3,5 L 7,9"
+                                  Stroke="#C5DAEE" StrokeThickness="1.5"/>
+                        </Button>
+                        <TextBlock Text="Parts" Style="{StaticResource Heading}" VerticalAlignment="Center" Margin="0"/>
+                    </DockPanel>
+                </StackPanel>
+                <ListBox x:Name="PartList" SelectionChanged="SelectionChanged"
+                         PreviewMouseLeftButtonDown="TogglePartRow" PreviewMouseLeftButtonUp="ReopenPartPopup" MouseDoubleClick="OpenPartSketch"
+                         PreviewKeyDown="OpenPartSketchFromKeyboard"
+                         Background="#141B25" Foreground="#EDF3FC" BorderBrush="#40506A"
+                         AutomationProperties.Name="Parts">
+                    <ListBox.GroupStyle>
+                        <GroupStyle HidesIfEmpty="False">
+                            <GroupStyle.ContainerStyle>
+                                <Style TargetType="GroupItem">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="GroupItem">
+                                                <Expander Header="{Binding}" IsExpanded="True" Margin="4,4,4,1"
+                                                          Foreground="#E7EDF6" Background="#202838"
+                                                          Loaded="RestorePartGroup" Expanded="RememberPartGroup"
+                                                          Collapsed="RememberPartGroup">
+                                                    <Expander.HeaderTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="4,3,8,3">
+                                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                                                <TextBlock Text="{Binding ItemCount}" Foreground="#ADBACD"
+                                                                           Margin="8,0,0,0"/>
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </Expander.HeaderTemplate>
+                                                    <ItemsPresenter Margin="9,2,0,3"/>
+                                                </Expander>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </GroupStyle.ContainerStyle>
+                        </GroupStyle>
+                    </ListBox.GroupStyle>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="5,2"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid MinHeight="25" Background="Transparent">
+                                <Grid.ContextMenu>
+                                    <ContextMenu Opened="OpenPartMenu">
+                                        <MenuItem Header="_Move…" Click="MovePartFromMenu"/>
+                                        <MenuItem Header="_Delete" Click="DeletePart"/>
+                                    </ContextMenu>
+                                </Grid.ContextMenu>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="27"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           Margin="0,0,5,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Hidden}" Value="True">
+                                                    <Setter Property="Foreground" Value="#96A4B8"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <Button Grid.Column="1" Click="TogglePartVisibility" Width="25" Height="23" Padding="0" Margin="0">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                            <Setter Property="ToolTip" Value="Hide part"/>
+                                            <Setter Property="AutomationProperties.Name" Value="Hide part"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Hidden}" Value="True">
+                                                    <Setter Property="ToolTip" Value="Show part"/>
+                                                    <Setter Property="AutomationProperties.Name" Value="Show part"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Grid Width="17" Height="16">
+                                        <Path Data="M 1,8 Q 8.5,0 16,8 Q 8.5,16 1,8 Z"
+                                              Stroke="#C5DAEE" StrokeThickness="1.2"/>
+                                        <Ellipse Width="4" Height="4" Fill="#C5DAEE"/>
+                                        <Path Data="M 2,2 L 15,14" Stroke="#C5DAEE" StrokeThickness="1.6">
+                                            <Path.Style>
+                                                <Style TargetType="Path">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Hidden}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Path.Style>
+                                        </Path>
+                                    </Grid>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+            <Grid x:Name="OrbitSurface" Grid.Column="1" Background="#101620" ClipToBounds="True" Focusable="True" SizeChanged="ViewportResized"
+                  MouseDown="OrbitStart" MouseUp="OrbitEnd" MouseMove="OrbitMove"
+                  MouseRightButtonUp="OpenViewportPartMenu"
+                  MouseWheel="Zoom" MouseLeave="ClearSurfaceHover" LostMouseCapture="LoseBuildCapture">
+                <Viewport3D x:Name="ModelViewport" ClipToBounds="True" IsHitTestVisible="False">
+                    <Viewport3D.Camera>
+                        <PerspectiveCamera x:Name="Camera" FieldOfView="45" NearPlaneDistance="0.5" FarPlaneDistance="100000"/>
+                    </Viewport3D.Camera>
+                    <ModelVisual3D x:Name="Scene"/>
+                    <ModelVisual3D x:Name="FeaturePreview"/>
+                    <ModelVisual3D x:Name="BevelHighlight"/>
+                    <ModelVisual3D x:Name="SolidFaceHighlight"/>
+                    <ModelVisual3D x:Name="SketchProfileHighlight"/>
+                    <ModelVisual3D x:Name="SurfaceHighlight"/>
+                </Viewport3D>
+                <Path x:Name="OriginPlaneOverlay" IsHitTestVisible="False" Fill="#35EDB14F" Stroke="#D9F9BF63" StrokeThickness="1.3"/>
+                <Path x:Name="HoveredPlaneOverlay" IsHitTestVisible="False" Fill="#66FFC966" Stroke="#FFFFD68A" StrokeThickness="1.7"/>
+                <Path x:Name="FeatureArrowOutline" IsHitTestVisible="False" Stroke="#18202A" StrokeThickness="5.5"
+                      StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                <Path x:Name="SolidEdgeMarkers" IsHitTestVisible="False" Stroke="#FFB665" StrokeThickness="3" Opacity="0.8"/>
+                <Path x:Name="SolidCornerMarkers" IsHitTestVisible="False" Fill="#FFB665" Stroke="#513724" StrokeThickness="1.2"/>
+                <Path x:Name="HoverEdgeMarker" IsHitTestVisible="False" Stroke="#FFE1AE" StrokeThickness="3" Opacity="0.82"/>
+                <Path x:Name="HoverCornerMarker" IsHitTestVisible="False" Fill="#FFE1AE" Stroke="#513724" StrokeThickness="1.2"/>
+                <Path x:Name="HoleTargetOutline" IsHitTestVisible="False" Fill="#45FF6775" Stroke="#FFFF929B" StrokeThickness="1.6"/>
+                <Path x:Name="FeatureArrow" IsHitTestVisible="False" StrokeThickness="3"
+                      StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                <Path x:Name="BevelEdgeMarkers" IsHitTestVisible="False" Stroke="#E94C5B" StrokeThickness="2.2"
+                      Opacity="0.6"
+                      StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                <Path x:Name="BevelCornerMarkers" IsHitTestVisible="False" Fill="#FF6875" Stroke="#632F3C"
+                      StrokeThickness="1.8" Opacity="0.65"/>
+                <Border x:Name="BedBadge" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" Background="#202838" Padding="7,4">
+                    <TextBlock x:Name="BedLabel" FontSize="11" Foreground="#ADBACD"/>
+                </Border>
+                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="12">
+                    <local:ViewCube x:Name="OrientationCube" Width="96" Height="96"
+                                    AutomationProperties.Name="View cube"
+                                    AutomationProperties.HelpText="Press Enter to choose a standard view."
+                                    ToolTip="Middle-drag to orbit. Click a face, edge, or corner to snap. Right-click for all views."/>
+                    <Button Content="Reset view" Click="ResetView" Margin="0"
+                            Padding="8,4" FontSize="12" HorizontalAlignment="Center"/>
+                </StackPanel>
+                <Border x:Name="SurfaceTooltip" Visibility="Collapsed" HorizontalAlignment="Left"
+                        VerticalAlignment="Top" Background="#202838" BorderBrush="#546176" BorderThickness="1"
+                        CornerRadius="2" Padding="7,4" IsHitTestVisible="False">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="SurfaceTooltipPosition"/>
+                    </Border.RenderTransform>
+                    <TextBlock x:Name="SketchSelectionHint" FontSize="12" AutomationProperties.LiveSetting="Polite"/>
+                </Border>
+                <Path x:Name="LassoOutline" IsHitTestVisible="False" Fill="#284FDBB7" Stroke="#70E6C5"
+                      StrokeThickness="1.5" StrokeDashArray="4 2"/>
+                <Path x:Name="MeasureOverlay" IsHitTestVisible="False" Stroke="#FFD27B" StrokeThickness="2"/>
+                <Path x:Name="MoveXAxis" IsHitTestVisible="False" Stroke="#FF766C" StrokeThickness="3" StrokeLineJoin="Round"/>
+                <Path x:Name="MoveYAxis" IsHitTestVisible="False" Stroke="#6DE29A" StrokeThickness="3" StrokeLineJoin="Round"/>
+                <Path x:Name="MoveZAxis" IsHitTestVisible="False" Stroke="#73BFFF" StrokeThickness="3" StrokeLineJoin="Round"/>
+                <Path x:Name="MovePivot" IsHitTestVisible="False" Fill="#EAF2FF" Stroke="#35455D" StrokeThickness="1.5"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="12,0,0,10">
+                    <StackPanel.Resources>
+                        <Style TargetType="RadioButton">
+                            <Setter Property="Foreground" Value="#EDF3FC"/>
+                            <Setter Property="Padding" Value="11,5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="RadioButton">
+                                        <Border x:Name="ModeBorder" Background="#293345" BorderBrush="#40506A"
+                                                BorderThickness="1" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter RecognizesAccessKey="True"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="ModeBorder" Property="Background" Value="#246A62"/>
+                                            </Trigger>
+                                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                                <Setter TargetName="ModeBorder" Property="BorderBrush" Value="#D6E9FF"/>
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ModeBorder" Property="BorderBrush" Value="#83A3BF"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </StackPanel.Resources>
+                    <RadioButton x:Name="WindowModeButton" Content="Window" GroupName="ViewportMouse" IsChecked="True"
+                                 Click="ChangeViewportMouseMode" ToolTip="Click to select. Middle-drag to orbit."/>
+                    <RadioButton x:Name="LassoModeButton" Content="Lasso" GroupName="ViewportMouse"
+                                 Click="ChangeViewportMouseMode" ToolTip="Drag around items to select them. Ctrl or Shift extends the selection."/>
+                </StackPanel>
+                <TextBlock x:Name="ViewportMouseHint" Text="Drag empty space to box-select · Middle-drag to orbit" Style="{StaticResource Muted}"
+                           HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="10" IsHitTestVisible="False"/>
+                <Border x:Name="FeaturePanel" Visibility="Collapsed" Width="232" HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom" Margin="0,0,16,38" Padding="12" CornerRadius="4"
+                        Background="#202838" BorderBrush="#537483" BorderThickness="1"
+                        MouseLeftButtonDown="KeepFeatureInput" MouseWheel="KeepFeatureWheel">
+                    <StackPanel>
+                        <TextBlock x:Name="FeatureTitle" Style="{StaticResource Heading}" Margin="0,0,0,8"/>
+                        <StackPanel x:Name="ExtrudeOptions" Orientation="Horizontal" Margin="0,0,0,10">
+                            <RadioButton x:Name="AddMaterial" Content="Add" Foreground="#61E697" Checked="FeatureInputChanged"
+                                         Margin="0,0,16,0"/>
+                            <RadioButton x:Name="RemoveMaterial" Content="Cut" Foreground="#FF7E85" Checked="FeatureInputChanged"
+                                         Margin="0,0,16,0" ToolTip="Cut every visible solid in the extrusion path."/>
+                            <RadioButton x:Name="MergeMaterial" Content="Merge" Foreground="#61E697" Checked="FeatureInputChanged"
+                                         ToolTip="Join the extrusion and the solids it meets into one body."/>
+                        </StackPanel>
+                        <CheckBox x:Name="ReverseExtrusion" Content="Reverse direction" Foreground="#E7EDF6"
+                                  Visibility="Collapsed" Margin="0,0,0,8"
+                                  Checked="FeatureInputChanged" Unchecked="FeatureInputChanged"/>
+                        <StackPanel x:Name="ThreadSizeOptions" Visibility="Collapsed" Margin="0,0,0,8">
+                            <Label Content="Thread _size" Target="{Binding ElementName=ThreadSizeChoice}" Foreground="#ADBACD" Padding="0"/>
+                            <ComboBox x:Name="ThreadSizeChoice" MaxDropDownHeight="260" SelectionChanged="ThreadSizeChanged"/>
+                            <TextBlock x:Name="ThreadSizeDimensions" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                        </StackPanel>
+                        <StackPanel x:Name="ExtrudeProfileOptions" Visibility="Collapsed" Margin="0,0,0,8">
+                            <Label Content="_Profile" Target="{Binding ElementName=ExtrudeProfileChoice}" Foreground="#ADBACD" Padding="0"/>
+                            <ComboBox x:Name="ExtrudeProfileChoice" SelectionChanged="FeatureInputChanged"/>
+                        </StackPanel>
+                        <Label x:Name="FeatureAmountLabel" Target="{Binding ElementName=FeatureAmount}" Foreground="#ADBACD" Padding="0"/>
+                        <TextBox x:Name="FeatureAmount" TextChanged="FeatureInputChanged"/>
+                        <StackPanel x:Name="BevelOptions" Visibility="Collapsed">
+                            <CheckBox x:Name="RoundedBevel" Content="Rounded" Foreground="#E7EDF6"
+                                      Checked="FeatureInputChanged" Unchecked="FeatureInputChanged" Margin="0,0,0,6"/>
+                            <CheckBox x:Name="CenteredBevel" Content="Centered" Foreground="#E7EDF6"
+                                      Checked="FeatureInputChanged" Unchecked="FeatureInputChanged" Margin="0,0,0,6"
+                                      ToolTip="Use equal setbacks on the adjoining faces."/>
+                            <StackPanel x:Name="BevelAngleOptions" Visibility="Collapsed">
+                                <Label Content="Bevel _angle (°)" Target="{Binding ElementName=BevelAngleInput}" Foreground="#ADBACD" Padding="0"/>
+                                <TextBox x:Name="BevelAngleInput" TextChanged="FeatureInputChanged"/>
+                            </StackPanel>
+                            <CheckBox x:Name="ContinueBevel" Content="Continue around face" Foreground="#E7EDF6"
+                                      Margin="0,0,0,8"/>
+                        </StackPanel>
+                        <StackPanel x:Name="MoveOptions" Visibility="Collapsed">
+                            <TextBlock x:Name="MoveUnitsLabel" Style="{StaticResource Muted}" Margin="0,0,0,4"/>
+                            <UniformGrid Columns="3">
+                                <StackPanel Margin="0,0,5,0">
+                                    <Label Content="Δ_X" Target="{Binding ElementName=MoveX}" Foreground="#ADBACD" Padding="0"/>
+                                    <TextBox x:Name="MoveX" TextChanged="FeatureInputChanged"/>
+                                </StackPanel>
+                                <StackPanel Margin="0,0,5,0">
+                                    <Label Content="Δ_Y" Target="{Binding ElementName=MoveY}" Foreground="#ADBACD" Padding="0"/>
+                                    <TextBox x:Name="MoveY" TextChanged="FeatureInputChanged"/>
+                                </StackPanel>
+                                <StackPanel>
+                                    <Label Content="Δ_Z" Target="{Binding ElementName=MoveZ}" Foreground="#ADBACD" Padding="0"/>
+                                    <TextBox x:Name="MoveZ" TextChanged="FeatureInputChanged"/>
+                                </StackPanel>
+                            </UniformGrid>
+                        </StackPanel>
+                        <StackPanel x:Name="ThreadOptions" Visibility="Collapsed">
+                            <Label x:Name="ThreadDepthLabel" Target="{Binding ElementName=ThreadDepthInput}" Foreground="#ADBACD" Padding="0"/>
+                            <TextBox x:Name="ThreadDepthInput" TextChanged="FeatureInputChanged"/>
+                            <CheckBox x:Name="ThreadFullLength" Content="Full length" Foreground="#E7EDF6"
+                                      Checked="FeatureInputChanged" Unchecked="FeatureInputChanged" Margin="0,0,0,6"/>
+                            <StackPanel x:Name="ThreadLengthOptions">
+                                <Label x:Name="ThreadLengthLabel" Target="{Binding ElementName=ThreadLengthInput}" Foreground="#ADBACD" Padding="0"/>
+                                <TextBox x:Name="ThreadLengthInput" TextChanged="FeatureInputChanged"/>
+                                <CheckBox x:Name="ThreadReverseEnd" Content="Start from opposite end" Foreground="#E7EDF6"
+                                          Checked="FeatureInputChanged" Unchecked="FeatureInputChanged" Margin="0,0,0,6"/>
+                            </StackPanel>
+                            <CheckBox x:Name="ThreadLeftHanded" Content="Left-handed" Foreground="#E7EDF6"
+                                      Checked="FeatureInputChanged" Unchecked="FeatureInputChanged" Margin="0,0,0,8"/>
+                        </StackPanel>
+                        <StackPanel x:Name="HoleOptions" Visibility="Collapsed">
+                            <Label Content="Hole _type" Target="{Binding ElementName=HoleTypeChoice}" Foreground="#ADBACD" Padding="0"/>
+                            <ComboBox x:Name="HoleTypeChoice" SelectionChanged="HoleTypeChanged" Margin="0,0,0,8">
+                                <ComboBoxItem Content="Straight"/>
+                                <ComboBoxItem Content="Counterbore"/>
+                                <ComboBoxItem Content="Countersink"/>
+                            </ComboBox>
+                            <StackPanel x:Name="HoleSeatOptions" Visibility="Collapsed">
+                                <Label x:Name="HoleSeatDiameterLabel" Target="{Binding ElementName=HoleSeatDiameter}" Foreground="#ADBACD" Padding="0"/>
+                                <TextBox x:Name="HoleSeatDiameter" TextChanged="FeatureInputChanged"/>
+                                <Label x:Name="HoleSeatSizeLabel" Target="{Binding ElementName=HoleSeatSize}" Foreground="#ADBACD" Padding="0"/>
+                                <TextBox x:Name="HoleSeatSize" TextChanged="FeatureInputChanged"/>
+                            </StackPanel>
+                            <CheckBox x:Name="HoleCenterOnFace" Content="Center on face" Foreground="#E7EDF6"
+                                      Checked="FeatureInputChanged" Unchecked="FeatureInputChanged" Margin="0,0,0,7"/>
+                            <CheckBox x:Name="HoleThrough" Content="Through all" Foreground="#E7EDF6"
+                                      Checked="FeatureInputChanged" Unchecked="FeatureInputChanged" Margin="0,0,0,8"/>
+                            <StackPanel x:Name="HoleDepthOptions">
+                                <Label x:Name="HoleDepthLabel" Target="{Binding ElementName=HoleDepthInput}" Foreground="#ADBACD" Padding="0"/>
+                                <TextBox x:Name="HoleDepthInput" TextChanged="FeatureInputChanged"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <TextBlock x:Name="FeatureFeedback" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,9"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="ApplyFeatureButton" Content="Apply" Click="ApplyBuildFeature" Background="#246A62"/>
+                            <Button Content="Cancel" Click="CancelBuildFeature" Margin="0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+            <Button x:Name="ShowPartsButton" Grid.Column="1" Panel.ZIndex="2" Click="TogglePartsSection"
+                    Visibility="Collapsed" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    Width="24" Height="42" Margin="0,50,0,0" Padding="0"
+                    AutomationProperties.Name="Show Parts section" ToolTip="Show Parts section">
+                <Path Data="M 3,1 L 7,5 L 3,9" Stroke="#C5DAEE" StrokeThickness="1.5"/>
+            </Button>
+            <Border x:Name="PartPopup" Grid.ColumnSpan="2" Width="224" Visibility="Collapsed" HorizontalAlignment="Left"
+                    VerticalAlignment="Top" Background="#202838" BorderBrush="#537483" BorderThickness="1"
+                    CornerRadius="4" Padding="10">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="PartPopupPosition"/>
+                </Border.RenderTransform>
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,7">
+                        <Button DockPanel.Dock="Right" Content="×" Click="DismissPartPopup" Margin="0"
+                                Width="23" Height="23" Padding="0" AutomationProperties.Name="Close part properties"
+                                ToolTip="Close part properties"/>
+                        <TextBlock Text="Part properties" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel TextElement.FontSize="12">
+                            <StackPanel.Resources>
+                                <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                                    <Setter Property="Padding" Value="5,3"/>
+                                    <Setter Property="Margin" Value="0,2,0,5"/>
+                                </Style>
+                                <Style TargetType="Label">
+                                    <Setter Property="Foreground" Value="#ADBACD"/>
+                                    <Setter Property="Padding" Value="0"/>
+                                    <Setter Property="FontSize" Value="12"/>
+                                </Style>
+                            </StackPanel.Resources>
+                            <Label Content="_Name" Target="{Binding ElementName=PartName}"/>
+                            <TextBox x:Name="PartName"/>
+                            <TextBlock x:Name="DimensionsLabel" Style="{StaticResource Muted}" Margin="0,3,0,3"/>
+                            <UniformGrid x:Name="PartDimensions" Rows="1">
+                                <StackPanel x:Name="PrimaryDimension" Margin="0,0,5,0">
+                                    <Label x:Name="WidthLabel" Target="{Binding ElementName=PartWidth}"/>
+                                    <TextBox x:Name="PartWidth"/>
+                                </StackPanel>
+                                <StackPanel x:Name="SecondaryDimension" Margin="0,0,5,0">
+                                    <Label x:Name="DepthLabel" Target="{Binding ElementName=PartDepth}"/>
+                                    <TextBox x:Name="PartDepth"/>
+                                </StackPanel>
+                                <StackPanel x:Name="HeightField">
+                                    <Label x:Name="HeightLabel" Target="{Binding ElementName=PartHeight}"/>
+                                    <TextBox x:Name="PartHeight"/>
+                                </StackPanel>
+                            </UniformGrid>
+                            <TextBlock x:Name="MeshSummary" Style="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,2,0,5"/>
+                            <TextBlock x:Name="PositionLabel" Style="{StaticResource Muted}" Margin="0,5,0,3" TextWrapping="Wrap"/>
+                            <UniformGrid Columns="3">
+                                <StackPanel Margin="0,0,5,0">
+                                    <Label Content="_X" Target="{Binding ElementName=PartX}"/>
+                                    <TextBox x:Name="PartX"/>
+                                </StackPanel>
+                                <StackPanel Margin="0,0,5,0">
+                                    <Label Content="_Y" Target="{Binding ElementName=PartY}"/>
+                                    <TextBox x:Name="PartY"/>
+                                </StackPanel>
+                                <StackPanel>
+                                    <Label Content="_Z" Target="{Binding ElementName=PartZ}"/>
+                                    <TextBox x:Name="PartZ"/>
+                                </StackPanel>
+                            </UniformGrid>
+                            <WrapPanel Margin="0,4,0,0">
+                                <Button Content="Apply" Click="ApplyPart" Background="#246A62" Padding="9,5"/>
+                                <Button Content="Drop to bed" Click="DropPart" Margin="0" Padding="9,5"/>
+                            </WrapPanel>
+                            <Button x:Name="EditSketchButton" Content="Edit sketch…" Click="EditSketch"
+                                    Margin="0,7,0,0" Padding="9,5" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+    <ContentControl x:Name="SketchHost" Visibility="Collapsed"
+                    HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
+    </Grid>
+</Window>
+
+
+
+
+
+

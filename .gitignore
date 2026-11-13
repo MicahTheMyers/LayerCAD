@@ -1,0 +1,7 @@
+bin/
+obj/
+.vs/
+*.user
+.codex-remote-attachments/
+/LayerCAD-*.png
+/LayerCAD-*.jpg

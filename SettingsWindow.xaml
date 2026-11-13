@@ -1,0 +1,66 @@
+<Window x:Class="LayerCAD.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="LayerCAD Settings" Width="402" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="#151A22" Foreground="#E7EDF6" FontFamily="Segoe UI" FontSize="14">
+    <Window.Resources>
+        <Style TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#E7EDF6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Grid Width="15" Height="15" Margin="0,0,6,0">
+                                <Ellipse x:Name="Ring" Fill="#141B25" Stroke="#778BA5" StrokeThickness="1.3"/>
+                                <Ellipse x:Name="Dot" Width="7" Height="7" Fill="#4FDBB7" Visibility="Collapsed"/>
+                            </Grid>
+                            <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Ring" Property="Stroke" Value="#4FDBB7"/>
+                                <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Ring" Property="StrokeThickness" Value="2"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <StackPanel Margin="20">
+        <TextBlock Text="Settings" FontSize="22" FontWeight="SemiBold"/>
+        <TextBlock x:Name="BuildVersion" Style="{StaticResource Muted}" Margin="0,0,0,16"/>
+        <TextBlock Text="Display units" Style="{StaticResource Heading}" Margin="0,0,0,8"/>
+        <WrapPanel Margin="0,0,0,18">
+            <RadioButton x:Name="Metric" Content="Millimeters (mm)" Checked="ChangeUnits" Margin="0,0,15,0"/>
+            <RadioButton x:Name="Imperial" Content="Inches (in)" Checked="ChangeUnits"/>
+        </WrapPanel>
+        <TextBlock x:Name="VolumeHeading" Style="{StaticResource Heading}" Margin="0,0,0,8"/>
+        <UniformGrid Columns="3">
+            <StackPanel Margin="0,0,8,0">
+                <Label Content="_X width" Target="{Binding ElementName=WidthInput}" Foreground="#ADBACD" Padding="0"/>
+                <TextBox x:Name="WidthInput"/>
+            </StackPanel>
+            <StackPanel Margin="0,0,8,0">
+                <Label Content="_Y depth" Target="{Binding ElementName=DepthInput}" Foreground="#ADBACD" Padding="0"/>
+                <TextBox x:Name="DepthInput"/>
+            </StackPanel>
+            <StackPanel>
+                <Label Content="_Z height" Target="{Binding ElementName=HeightInput}" Foreground="#ADBACD" Padding="0"/>
+                <TextBox x:Name="HeightInput"/>
+            </StackPanel>
+        </UniformGrid>
+        <TextBlock Text="STL files are imported and exported in millimeters." Style="{StaticResource Muted}"
+                   TextWrapping="Wrap" Margin="0,2,0,12"/>
+        <TextBlock x:Name="Feedback" Foreground="#FFC39E" TextWrapping="Wrap" Visibility="Collapsed"
+                   Margin="0,0,0,12" AutomationProperties.LiveSetting="Polite"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Cancel" IsCancel="True"/>
+            <Button Content="Apply" IsDefault="True" Click="Apply" Background="#246A62" Margin="0"/>
+        </StackPanel>
+    </StackPanel>
+</Window>
