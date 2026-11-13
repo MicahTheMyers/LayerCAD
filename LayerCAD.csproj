@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <Version>1.0.20</Version>
+    <Version>1.0.21</Version>
     <RepositoryUrl>https://github.com/MicahTheMyers/LayerCAD</RepositoryUrl>
     <ApplicationIcon>Assets\LayerCAD.ico</ApplicationIcon>
   </PropertyGroup>
@@ -24,6 +24,8 @@
   <ItemGroup>
     <AssemblyMetadata Include="UpdateBundle" Value="$(PublishSingleFile)" />
     <EmbeddedResource Include="Updates/Install-Update.ps1" />
+    <!-- Avoid stale tiles during hardware-accelerated viewport updates. -->
+    <RuntimeHostConfigurationOption Include="Switch.System.Windows.Media.MediaContext.DisableDirtyRectangles" Value="true" />
   </ItemGroup>
 
 </Project>
