@@ -316,6 +316,8 @@ function startViewer() {
         const solid = editor.hidden && part && !part.Hidden && part.Kind !== "Sketch";
         byId("split-body").disabled = !solid || !booleanEngine;
         byId("scale-body").disabled = !solid;
+        byId("mirror-body").disabled = !solid;
+        byId("circular-pattern").disabled = !solid;
         byId("remove-part").disabled = !editor.hidden || !part;
         byId("undo").disabled = !editor.hidden || !undo.length;
         byId("redo").disabled = !editor.hidden || !redo.length;
@@ -368,6 +370,53 @@ function startViewer() {
         return { Kind: "Mesh", Name: name, X: 0, Y: 0, Z: 0, Width: 0, Depth: 0, Height: 0,
             Mesh: { Triangles: triangles } };
     }
+    function transformMesh(mesh, transform, reverse = false) {
+        const point = vertex => {
+            const [X,Y,Z] = transform(vertex);
+            return { X,Y,Z };
+        };
+        return mesh.map(([a,b,c]) => ({ A: point(a), B: point(reverse ? c : b), C: point(reverse ? b : c) }));
+    }
+    byId("mirror-body").onclick = () => {
+        const answer = prompt("Mirror plane and position (mm): XY, XZ, or YZ", "YZ, 0");
+        if (answer === null) return;
+        const [plane, distance, ...extra] = answer.toUpperCase().split(",").map(value => value.trim());
+        const axis = new Map([["XY",2],["XZ",1],["YZ",0]]).get(plane);
+        const offset = Number(distance);
+        if (axis === undefined || !distance || extra.length || !Number.isFinite(offset)) {
+            status.textContent = "Choose a plane and a numeric position.";
+            return;
+        }
+        try {
+            const part = project.Parts[selected];
+            const mesh = transformMesh(solidMesh(part),
+                vertex => vertex.map((value, i) => i === axis ? 2*offset-value : value), true);
+            if (changeParts([...project.Parts, meshBody(part.Name + " mirror", mesh)], project.Parts.length)) fit();
+        } catch (error) { status.textContent = error.message; }
+    };
+    byId("circular-pattern").onclick = () => {
+        const answer = prompt("Copies, angle between copies (degrees), center X, center Y (mm)", "3, 90, 0, 0");
+        if (answer === null) return;
+        const values = answer.split(",").map(Number);
+        const [count, angle, cx, cy] = values;
+        if (values.length !== 4 || !values.every(Number.isFinite) ||
+            !Number.isInteger(count) || count < 1 || count > 40 || !angle || Math.abs(angle)*count >= 360) {
+            status.textContent = "Enter 1–40 copies and a nonzero spacing spanning less than 360°.";
+            return;
+        }
+        try {
+            const part = project.Parts[selected], original = solidMesh(part);
+            if (original.length * (count + 1) > triangleLimit)
+                throw new Error("Reduce the copy count to fit the project's triangle limit.");
+            const copies = Array.from({ length: count }, (_, i) => {
+                const radians = angle * (i + 1) * Math.PI / 180;
+                const cos = Math.cos(radians), sin = Math.sin(radians);
+                return meshBody(`${part.Name} copy ${i+1}`, transformMesh(original, ([x,y,z]) =>
+                    [cx + (x-cx)*cos - (y-cy)*sin, cy + (x-cx)*sin + (y-cy)*cos, z]));
+            });
+            if (changeParts([...project.Parts, ...copies])) fit();
+        } catch (error) { status.textContent = error.message; }
+    };
     byId("split-body").onclick = () => {
         const input = prompt("Split plane and position (mm): XY, XZ, or YZ", "XY, 5");
         if (input === null) return;
