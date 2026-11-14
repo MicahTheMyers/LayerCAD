@@ -227,6 +227,13 @@ function startViewer() {
     const undo = [], redo = [];
     const byId = id => document.getElementById(id);
     const save = document.querySelector("#save");
+    let booleanEngine;
+    import("./boolean.mjs?v=1").then(module => {
+        booleanEngine = module;
+        refreshParts();
+    }).catch(() => {
+        status.textContent = "The solid boolean engine could not load.";
+    });
     const modeling = byId("model-tool");
     const engineReady = import("./engine/engine.js?v=constraints-1").then(engine => {
         geometryEngine = engine;
@@ -303,6 +310,9 @@ function startViewer() {
         byId("bevel").disabled = !editor.hidden || !geometryEngine || part?.Kind !== "Box";
         byId("thread").disabled = !editor.hidden || !geometryEngine ||
             !(part?.Kind === "Cylinder" || part?.Kind === "Tube" || part?.Holes?.length || part?.Kind === "Extrusion");
+        byId("combine").disabled = !editor.hidden || !booleanEngine || !part || part.Hidden ||
+            part.Kind === "Sketch" || !project.Parts.some(item => item !== part && !item.Hidden && item.Kind !== "Sketch");
+        byId("shell").disabled = !editor.hidden || !booleanEngine || !canShell(part);
         byId("remove-part").disabled = !editor.hidden || !part;
         byId("undo").disabled = !editor.hidden || !undo.length;
         byId("redo").disabled = !editor.hidden || !redo.length;
@@ -342,6 +352,53 @@ function startViewer() {
     }
     byId("undo").onclick = () => stepHistory(undo, redo);
     byId("redo").onclick = () => stepHistory(redo, undo);
+    function canShell(part) {
+        return part && !part.Hidden && ["Box","Cylinder"].includes(part.Kind) &&
+            !part.Bevel && !part.BevelCuts && !part.Holes && !part.Threads;
+    }
+    function solidMesh(part) {
+        const mesh = parseProject({ Parts: [part] }).triangles;
+        if (!mesh.length) throw new Error("The selected body has no supported solid geometry.");
+        return mesh;
+    }
+    function applyBoolean(stock, tool, operation, consumeTool) {
+        try {
+            const triangles = booleanEngine.combine(solidMesh(stock), solidMesh(tool), operation);
+            if (!triangles.length) throw new Error("The operation leaves no solid geometry.");
+            const result = { Kind: "Mesh", Name: stock.Name, X: 0, Y: 0, Z: 0,
+                Width: 0, Depth: 0, Height: 0, Mesh: { Triangles: triangles } };
+            const parts = project.Parts.filter(part => !consumeTool || part !== tool)
+                .map(part => part === stock ? result : part);
+            if (changeParts(parts, parts.indexOf(result))) status.textContent = "Solid operation applied.";
+        } catch (error) { status.textContent = error.message || "The selected meshes must be closed solids."; }
+    }
+    byId("combine").onclick = () => {
+        const stock = project.Parts[selected];
+        const tools = project.Parts.filter(part => part !== stock && !part.Hidden && part.Kind !== "Sketch");
+        const selection = prompt("Choose a tool body by number:\n" + tools.map((part,i) => `${i+1}. ${part.Name}`).join("\n"), "1");
+        if (selection === null) return;
+        const tool = tools[Number(selection)-1];
+        if (!tool) { status.textContent = "Choose an available body number."; return; }
+        const operation = prompt("Operation: Join, Cut, or Intersect", "Join")?.trim().toLowerCase();
+        if (!operation) return;
+        const method = new Map([["join","add"],["cut","subtract"],["intersect","intersect"]]).get(operation);
+        if (!method) { status.textContent = "Choose Join, Cut, or Intersect."; return; }
+        applyBoolean(stock, tool, method, true);
+    };
+    byId("shell").onclick = () => {
+        const stock = project.Parts[selected];
+        const answer = prompt("Wall thickness (mm)", "2");
+        if (answer === null) return;
+        const thickness = Number(answer);
+        if (!(thickness >= 0.01 && thickness < stock.Height && 2*thickness < stock.Width &&
+            (stock.Kind !== "Box" || 2*thickness < stock.Depth))) {
+            status.textContent = "Reduce the wall thickness so the cavity fits.";
+            return;
+        }
+        const cavity = { ...stock, Width: stock.Width-2*thickness, Depth: stock.Depth-2*thickness,
+            Z: stock.Z+thickness, Height: stock.Height-thickness+1 };
+        applyBoolean(stock, cavity, "subtract", false);
+    };
     function modifySelected(update, version) {
         try {
             const next = update(project.Parts[selected]);
