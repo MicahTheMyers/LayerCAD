@@ -9,13 +9,6 @@ using Microsoft.Win32;
 
 namespace LayerCAD;
 
-public sealed record SketchReferenceImage(byte[] Png, double Width, double Height, double X, double Y, double Opacity)
-{
-    internal bool IsValid() => Png is { Length: > 0 and <= 8_000_000 } &&
-        Part.ValidDimension(Width) && Part.ValidDimension(Height) &&
-        Part.ValidOffset(X) && Part.ValidOffset(Y) && Opacity is >= 0 and <= 1;
-}
-
 public partial class SketchEditor
 {
     internal SketchReferenceImage? ReferenceImage { get; private set; }

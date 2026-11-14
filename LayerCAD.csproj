@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -12,7 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="SketchGeometry.cs;LayerCAD.Core/**/*.cs"/>
+    <Compile Remove="SketchGeometry.cs;LayerCAD.Core/**/*.cs;LayerCAD.Portable/**/*.cs;LayerCAD.Browser/**/*.cs"/>
     <ProjectReference Include="LayerCAD.Core/LayerCAD.Core.csproj"/>
     <Resource Include="Assets\LayerCAD-mark.png;Assets\LayerCAD.ico" />
     <Content Include="Native\LayerCadManifold.dll" TargetPath="LayerCadManifold.dll"

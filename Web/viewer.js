@@ -1,6 +1,7 @@
 "use strict";
 
 const triangleLimit = 250000;
+let geometryEngine;
 
 
 function parseStl(buffer) {
@@ -105,6 +106,14 @@ function parseProject(project) {
             continue;
         }
         if (!Array.isArray(part.Mesh?.Triangles)) {
+            if (geometryEngine && part.Kind !== "Sketch") {
+                const mesh = JSON.parse(geometryEngine.buildPart(JSON.stringify(part)));
+                if (triangles.length + mesh.length > triangleLimit)
+                    throw new Error("This project exceeds the viewer's triangle limit.");
+                for (const { A, B, C } of mesh)
+                    triangles.push([A, B, C].map(({ X, Y, Z }) => [X, Y, Z]));
+                continue;
+            }
             skipped++;
             continue;
         }
@@ -216,6 +225,13 @@ function startViewer() {
     const undo = [], redo = [];
     const byId = id => document.getElementById(id);
     const save = document.querySelector("#save");
+    const modeling = byId("model-tool");
+    const engineReady = import("./engine/engine.js").then(engine => {
+        geometryEngine = engine;
+        modeling.disabled = !editor.hidden;
+    }).catch(() => {
+        status.textContent = "The advanced geometry engine could not load. Basic editing is available.";
+    });
     function upload(solids, sketches = []) {
     const triangles = solids.concat(sketches);
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
@@ -288,10 +304,10 @@ function startViewer() {
         redraw();
         return result;
     }
-    function changeParts(parts, nextSelection = selected) {
+    function changeParts(parts, nextSelection = selected, minimumVersion = 11) {
         const before = project;
         try {
-            loadScene({ ...project, Version: Math.max(11, project.Version), Parts: parts });
+            loadScene({ ...project, Version: Math.max(minimumVersion, project.Version), Parts: parts });
         } catch (error) {
             status.textContent = error.message;
             return false;
@@ -314,6 +330,60 @@ function startViewer() {
     }
     byId("undo").onclick = () => stepHistory(undo, redo);
     byId("redo").onclick = () => stepHistory(redo, undo);
+    modeling.onchange = () => {
+        const tool = modeling.value;
+        modeling.value = "";
+        if (!tool || !geometryEngine) return;
+        try {
+            let sources = [], values = [];
+            if (tool === "Loft") {
+                sources = project.Parts.filter(part => part.Kind === "Sketch" && part.Profile && !part.Hidden);
+                if (sources.length < 2) throw new Error("Show two or more closed sketches on parallel planes.");
+                const guide = project.Parts[selected];
+                if (guide?.Kind === "Sketch" && guide.OpenPaths?.length)
+                    sources.push({ ...guide, Profile: null, AdditionalProfiles: null, Dimensions: null, Constraints: null });
+            } else if (tool === "Sweep" || tool === "Pipe") {
+                const path = project.Parts[selected];
+                if (path?.Kind !== "Sketch" || !path.OpenPaths?.length)
+                    throw new Error("Select a sketch containing an open path.");
+                if (tool === "Sweep") {
+                    const profile = project.Parts.find(part => part.Kind === "Sketch" && part.Profile && !part.Hidden && part !== path);
+                    if (!profile) throw new Error("Show a separate closed profile for Sweep.");
+                    sources = [profile, path];
+                } else {
+                    const answer = prompt("Outer radius and wall thickness (mm)", "5, 1");
+                    if (answer === null) return;
+                    values = answer.split(",").map(Number);
+                    if (values.length !== 2 || !values.every(Number.isFinite)) throw new Error("Enter a radius and wall thickness.");
+                    sources = [path];
+                }
+            } else {
+                const fields = {
+                    Sphere: ["Diameter (mm)", "30"],
+                    Torus: ["Center radius and tube radius (mm)", "20, 5"],
+                    Coil: ["Center radius, wire radius, pitch (mm), turns", "15, 2, 6, 4"],
+                    Revolve: ["Angle (degrees), axis (0 for vertical, 1 for horizontal)", "360, 0"]
+                };
+                if (tool === "Revolve") {
+                    const sketch = project.Parts[selected];
+                    if (sketch?.Kind !== "Sketch" || !sketch.Profile) throw new Error("Select a closed sketch to revolve.");
+                    sources = [sketch];
+                }
+                const answer = prompt(...fields[tool]);
+                if (answer === null) return;
+                values = answer.split(",").map(Number);
+                if (values.length !== fields[tool][1].split(",").length || !values.every(Number.isFinite))
+                    throw new Error("Enter the requested numeric values.");
+            }
+            const [a = 0, b = 0, c = 0, d = 0] = values;
+            const triangles = JSON.parse(geometryEngine.modelPart(tool, JSON.stringify(sources), a, b, c, d));
+            let lowest = Infinity;
+            for (const { A, B, C } of triangles) lowest = Math.min(lowest, A.Z, B.Z, C.Z);
+            if (changeParts([...project.Parts, { Kind: "Mesh", Name: tool, X: 0, Y: 0,
+                Z: sources.length ? 0 : -lowest, Width: 0, Depth: 0, Height: 0, Mesh: { Triangles: triangles } }],
+                project.Parts.length)) fit();
+        } catch (error) { status.textContent = error.message; }
+    };
     byId("primitive").onclick = () => {
         const kind = prompt("Primitive type: Box, Cylinder, or Tube", "Box")?.trim().toLowerCase();
         const types = { box: "Box", cylinder: "Cylinder", tube: "Tube" };
@@ -386,7 +456,8 @@ function startViewer() {
     const shape = document.querySelector("#shape");
     const undoPoint = document.querySelector("#undo-point");
     function drawSketch() {
-        const profile = shape.value !== "Polygon" && points.length === 2 ? shapeProfile(shape.value, points) : points;
+        const fixedShape = shape.value === "Rectangle" || shape.value === "Circle";
+        const profile = fixedShape && points.length === 2 ? shapeProfile(shape.value, points) : points;
         outline.setAttribute("points", profile.map(([x, y]) => [x + 110, 110 - y].join(",")).join(" "));
         vertices.replaceChildren();
         for (const [x, y] of points) {
@@ -405,6 +476,7 @@ function startViewer() {
         document.querySelector("#fit").disabled = active;
         byId("mode").textContent = active ? "Sketch Mode" : "Build Mode";
         byId("primitive").disabled = active;
+        modeling.disabled = active || !geometryEngine;
         refreshParts();
         if (!active) redraw();
     }
@@ -436,7 +508,8 @@ function startViewer() {
         status.textContent = {
             Polygon: "Tap the outline points in order. Extrude closes the outline.",
             Rectangle: "Tap two opposite corners of the rectangle.",
-            Circle: "Tap the center, then a point on the circle."
+            Circle: "Tap the center, then a point on the circle.",
+            "Open path": "Tap the path points in order, then choose Finish sketch."
         }[shape.value];
     }
     shape.addEventListener("change", () => { points.length = 0; drawSketch(); sketchHint(); });
@@ -445,7 +518,7 @@ function startViewer() {
         const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(plane.getScreenCTM().inverse());
         const x = Math.round(point.x), y = Math.round(point.y);
         if (x < 0 || x > 220 || y < 0 || y > 220) return;
-        if (shape.value !== "Polygon" && points.length === 2) points.length = 0;
+        if ((shape.value === "Rectangle" || shape.value === "Circle") && points.length === 2) points.length = 0;
         points.push([x - 110, 110 - y]);
         drawSketch();
     });
@@ -459,8 +532,12 @@ function startViewer() {
     function finishSketch(extrude) {
         try {
             const height = document.querySelector("#height").valueAsNumber;
-            const profile = shapeProfile(shape.value, points);
-            extrudeProfile(profile, extrude ? height : 1);
+            const open = shape.value === "Open path";
+            if (open && (extrude || points.length < 2 || points.some((point, i) =>
+                i && point[0] === points[i-1][0] && point[1] === points[i-1][1])))
+                throw new Error("Finish an open path with at least two distinct consecutive points.");
+            const profile = open ? points : shapeProfile(shape.value, points);
+            if (!open) extrudeProfile(profile, extrude ? height : 1);
             const plane = byId("plane-choice").value;
             const offset = byId("plane-offset").valueAsNumber;
             if (editing < 0 && (!Number.isFinite(offset) || Math.abs(offset) > 10000))
@@ -473,7 +550,8 @@ function startViewer() {
             const link = previous?.SketchId ?? crypto.randomUUID();
             const index = editing < 0 ? list.length : editing;
             list[index] = { ...position, Kind: "Sketch", Name: `Sketch ${index + 1}`, Height: 0,
-                ...previous, Profile: outline, SketchId: link, Hidden: extrude || previous?.Hidden || false };
+                ...previous, Profile: open ? null : outline, OpenPaths: open ? [outline] : previous?.OpenPaths,
+                SketchId: link, Hidden: extrude || previous?.Hidden || false };
             if (previous?.SketchId) {
                 for (let i = 0; i < list.length; i++)
                     if (list[i].Kind === "Extrusion" && list[i].SketchId === link && !list[i].SketchProfileIndex)
@@ -482,7 +560,7 @@ function startViewer() {
             if (extrude) list.push({ ...position, X: list[index].X, Y: list[index].Y, Z: list[index].Z,
                 Plane: list[index].Plane, FaceFrame: list[index].FaceFrame, Kind: "Extrusion",
                 Name: `Extrusion ${list.length + 1}`, Height: height, Profile: outline, SketchId: link });
-            if (!changeParts(list, extrude ? list.length - 1 : index)) return;
+            if (!changeParts(list, extrude ? list.length - 1 : index, open ? 17 : 11)) return;
             showSketch(false);
             fit();
             status.textContent = extrude ? `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom` : "Sketch saved.";
@@ -518,6 +596,7 @@ function startViewer() {
             const sizeLimit = projectFile ? 64 : 256;
             if (file.size > sizeLimit * 1024 * 1024) throw new Error(`Choose a file up to ${sizeLimit} MB.`);
             const opened = projectFile ? JSON.parse(await file.text()) : null;
+            if (projectFile) await engineReady;
             const result = projectFile ? parseProject(opened) : parseStl(await file.arrayBuffer());
             if (sequence !== loadSequence) return;
             if (!projectFile && !result.triangles.length) throw new Error("This file has no triangles.");

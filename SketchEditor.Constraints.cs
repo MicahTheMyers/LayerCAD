@@ -3,10 +3,6 @@ using System.Windows.Controls;
 
 namespace LayerCAD;
 
-public enum ProfileConstraintKind { Horizontal, Vertical, CoincidentOrigin }
-
-public sealed record ProfileConstraint(ProfileConstraintKind Kind, int Vertex);
-
 public partial class SketchEditor
 {
     private readonly Dictionary<List<SketchPoint>, ProfileConstraint[]> constraints = new();

@@ -2,20 +2,6 @@ using System.Windows;
 
 namespace LayerCAD;
 
-public sealed record ProfileDimensions(double Width, double Height, bool Centered, bool FollowInnerCircles = false)
-{
-    internal bool IsValid() => Part.ValidDimension(Width) && Part.ValidDimension(Height);
-
-    internal SketchPoint[] Apply(IReadOnlyList<SketchPoint> profile)
-    {
-        double minX = profile.Min(p => p.X), minY = profile.Min(p => p.Y);
-        double spanX = profile.Max(p => p.X) - minX, spanY = profile.Max(p => p.Y) - minY;
-        double x = Centered ? -Width / 2 : minX, y = Centered ? -Height / 2 : minY;
-        return profile.Select(p => new SketchPoint(x + (p.X - minX) * Width / spanX,
-            y + (p.Y - minY) * Height / spanY)).ToArray();
-    }
-}
-
 public partial class SketchEditor
 {
     private readonly Dictionary<List<SketchPoint>, ProfileDimensions> profileDimensions = new();

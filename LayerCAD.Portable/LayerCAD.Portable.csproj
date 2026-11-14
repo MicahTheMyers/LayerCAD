@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Geometry.cs;../BuildFeatures.cs;../HoleGeometry.cs;../IntersectingBores.cs;../ModelingMeshes.cs;../PolygonBevel.cs;../RoundBevel.cs;../SelectiveBoxBevel.cs;../ThreadGeometry.cs;../MetricThreadSize.cs;../SolidBoolean.cs;../SketchGeometry.cs;../LayerCAD.Core/ProfileExtrusion.cs;../SketchMetadata.cs" />
+    <InternalsVisibleTo Include="LayerCAD.Browser" />
+    <PackageReference Include="LibTessDotNet" Version="1.1.15" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <WasmMainJSPath>engine.js</WasmMainJSPath>
+    <WasmBuildNative>false</WasmBuildNative>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../LayerCAD.Portable/LayerCAD.Portable.csproj"/>
+  </ItemGroup>
+</Project>

@@ -48,8 +48,17 @@ internal static class ModelingMeshes
         var sections = new Point3D[steps + (closed ? 0 : 1)][];
         for (int step = 0; step < sections.Length; step++)
         {
-            var rotation = new RotateTransform3D(new AxisAngleRotation3D(axis, degrees * step / steps), origin);
-            sections[step] = profile.Select((point, i) => radial[i] == 0 ? At(sketch, point) : rotation.Transform(At(sketch, point))).ToArray();
+            double angle = degrees * Math.PI * step / (180 * steps);
+            double cosine = Math.Cos(angle), sine = Math.Sin(angle);
+            sections[step] = profile.Select((point, i) =>
+            {
+                var vertex = At(sketch, point);
+                if (radial[i] == 0)
+                    return vertex;
+                var vector = vertex - origin;
+                return origin + vector * cosine + Vector3D.CrossProduct(axis, vector) * sine +
+                    axis * (Vector3D.DotProduct(axis, vector) * (1 - cosine));
+            }).ToArray();
         }
         return Connect(sections, closed, cap, reverseCap: !counterclockwise);
     }
