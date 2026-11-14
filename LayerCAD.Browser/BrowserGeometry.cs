@@ -72,6 +72,10 @@ public static partial class BrowserGeometry
                 ModelingMeshes.Sweep(pathSketch, sweepPaths[0], sweepProfile, centerProfile: false),
             "Pipe" when parts is [{ OpenPaths: { Length: > 0 } paths } sketch] && a > b && b > 0 =>
                 ModelingMeshes.Pipe(sketch,paths[0],a,b),
+            "Rib" when parts is [{ OpenPaths: { Length: > 0 } paths } sketch] &&
+                Part.ValidDimension(a) && Part.ValidDimension(b) =>
+                ModelingMeshes.Sweep(sketch, paths[0],
+                    [new(-a / 2, 0), new(a / 2, 0), new(a / 2, b), new(-a / 2, b)], centerProfile: false),
             _ => null
         };
         if (mesh is null || !new MeshData(mesh.ToArray()).IsValid())
