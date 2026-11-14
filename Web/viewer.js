@@ -180,12 +180,16 @@ function startViewer() {
     gl.useProgram(program);
     gl.enable(gl.DEPTH_TEST);
     const buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    for (const [name, offset] of [["position", 0], ["normal", 12]]) {
-        const location = gl.getAttribLocation(program, name);
-        gl.enableVertexAttribArray(location);
-        gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 24, offset);
+    const plateBuffer = gl.createBuffer();
+    const attributes = ["position", "normal"].map(name => gl.getAttribLocation(program, name));
+    function bindGeometry(source) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, source);
+        attributes.forEach((location, index) => {
+            gl.enableVertexAttribArray(location);
+            gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 24, index * 12);
+        });
     }
+    let plateVertices = 0, plateDepth = 1;
     const angles = gl.getUniformLocation(program, "angles"), scale = gl.getUniformLocation(program, "scale");
     const tint = gl.getUniformLocation(program, "tint");
     let solidVertexCount = 0;
@@ -206,7 +210,17 @@ function startViewer() {
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         const fit = Math.min(width, height) * 0.84 * zoom;
         gl.uniform4f(angles, Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch));
-        gl.uniform3f(scale, fit / width, fit / height, 0.9);
+        gl.uniform3f(scale, fit / width, fit / height, 0.9 / plateDepth);
+        bindGeometry(plateBuffer);
+        gl.uniform3f(tint, 0.16, 0.24, 0.34);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.uniform3f(tint, 0.32, 0.43, 0.56);
+        gl.drawArrays(gl.LINES, 6, plateVertices - 10);
+        gl.uniform3f(tint, 0.78, 0.35, 0.33);
+        gl.drawArrays(gl.LINES, plateVertices - 4, 2);
+        gl.uniform3f(tint, 0.35, 0.67, 0.47);
+        gl.drawArrays(gl.LINES, plateVertices - 2, 2);
+        bindGeometry(buffer);
         const [start, end] = (partRanges[selected] ?? [0, 0]).map(index => index * 3);
         function drawRange(first, last, color) {
             gl.uniform3f(tint, ...color);
@@ -283,6 +297,7 @@ function startViewer() {
             for (const component of normal) data[offset++] = component/length;
         }
     }
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     if (gl.getError() !== gl.NO_ERROR) throw new Error("The model exceeds available graphics memory.");
     vertexCount = data.length / 6;
@@ -293,6 +308,29 @@ function startViewer() {
         modelRadius = triangles.length ? radius : 1;
         model = solids;
         document.querySelector("#export").disabled = !solids.length;
+    }
+    function uploadPlate() {
+        const dimension = value => Number.isFinite(value) && value > 0 ? value : 220;
+        const x = dimension(project.Bed?.X) / 2, y = dimension(project.Bed?.Y) / 2;
+        if (!sceneTriangles.length) modelRadius = Math.hypot(x, y) * 0.8;
+        const data = [];
+        const point = (a, b, z) => {
+            const p = [a, b, z].map((value, axis) => (value - modelCenter[axis]) / modelRadius);
+            plateDepth = Math.max(plateDepth, Math.hypot(...p));
+            data.push(...p, 0, 0, 1);
+        };
+        plateDepth = 1;
+        for (const [a,b] of [[-x,-y],[x,-y],[x,y],[-x,-y],[x,y],[-x,y]]) point(a,b,-0.06);
+        const line = (a,b,c,d) => { point(a,b,-0.035); point(c,d,-0.035); };
+        for (const a of [-x, x]) line(a,-y,a,y);
+        for (const b of [-y, y]) line(-x,b,x,b);
+        for (let a = 10; a < x && a <= 1000; a += 10) { line(a,-y,a,y); line(-a,-y,-a,y); }
+        for (let b = 10; b < y && b <= 1000; b += 10) { line(-x,b,x,b); line(-x,-b,x,-b); }
+        line(-x,0,x,0);
+        line(0,-y,0,y);
+        gl.bindBuffer(gl.ARRAY_BUFFER, plateBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+        plateVertices = data.length / 6;
     }
     function refreshParts() {
         redraw();
@@ -349,6 +387,7 @@ function startViewer() {
         const result = parseProject(next);
         upload(result.triangles, result.sketchTriangles, result.ranges);
         project = next;
+        uploadPlate();
         refreshParts();
         redraw();
         return result;
@@ -780,6 +819,14 @@ function startViewer() {
         } catch (error) { status.textContent = error.message; }
     };
     const shape = document.querySelector("#shape");
+    const shapeTools = [...document.querySelectorAll("[data-shape]")];
+    for (const button of shapeTools) button.onclick = () => {
+        if (shape.value !== button.dataset.shape) {
+            shape.value = button.dataset.shape;
+            shape.dispatchEvent(new Event("change"));
+        }
+        button.closest("details").open = false;
+    };
     const undoPoint = document.querySelector("#undo-point");
     const referenceOverlay = byId("reference-overlay");
     let reference = null, referenceSequence = 0, calibration = null;
@@ -874,6 +921,10 @@ function startViewer() {
         }
         undoPoint.disabled = !points.length || !!rules.length;
         shape.disabled = !!rules.length;
+        for (const button of shapeTools) {
+            button.disabled = shape.disabled;
+            button.setAttribute("aria-pressed", button.dataset.shape === shape.value);
+        }
         const vertex = vertexPicker.value;
         vertexPicker.replaceChildren(...points.map((_, i) => new Option(String(i + 1), String(i))));
         if (vertex && Number(vertex) < points.length) vertexPicker.value = vertex;
@@ -890,6 +941,9 @@ function startViewer() {
                 `M ${110+a.X} ${110-a.Y} L ${110+b.X} ${110-b.Y}`).join(" "));
         }
         editor.hidden = !active;
+        byId("build-tools").hidden = active;
+        byId("sketch-tools").hidden = !active;
+        for (const detail of byId("sketch-tools").querySelectorAll("details")) detail.open = false;
         canvas.hidden = active;
         document.querySelector("#start-sketch").disabled = active;
         document.querySelector("#fit").disabled = active;
@@ -1115,6 +1169,7 @@ function startViewer() {
                 }) } }] };
             selected = -1;
             undo.length = redo.length = 0;
+            uploadPlate();
             pickingFace = false;
             showSketch(false);
             status.textContent = `${file.name} · ${result.triangles.length.toLocaleString()} triangles · Drag to orbit · Pinch or scroll to zoom` +
@@ -1214,5 +1269,6 @@ function startViewer() {
         scaleBy(Math.exp(-event.deltaY * 0.001));
     }, { passive: false });
     new ResizeObserver(redraw).observe(canvas);
+    uploadPlate();
     refreshParts();
 }
