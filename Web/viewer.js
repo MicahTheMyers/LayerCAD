@@ -36,12 +36,22 @@ function parseStl(buffer) {
 function parseProject(project) {
     if (!Array.isArray(project.Parts)) throw new Error("Invalid LayerCAD project.");
     const triangles = [];
+    const sketchTriangles = [];
+    const extrude = typeof module === "undefined" ? extrudeProfile : require("./sketch.js").extrudeProfile;
     let skipped = 0;
     for (const part of project.Parts) {
         if (part.Hidden) continue;
+        if (part.Kind === "Sketch" && (!part.Plane || part.Plane === "XY") && !part.FaceFrame && part.Profile) {
+            for (const profile of [part.Profile, ...(part.AdditionalProfiles ?? [])]) {
+                const caps = extrude(profile.map(({X,Y}) => [X,Y]), 1).slice(0, 2 * (profile.length - 2));
+                for (let i = 1; i < caps.length; i += 2)
+                    sketchTriangles.push(caps[i].map(([x,y]) => [x+part.X,y+part.Y,part.Z+0.008]));
+            }
+            if (part.OpenPaths?.length) skipped++;
+            continue;
+        }
         if (part.Kind === "Extrusion" && (!part.Plane || part.Plane === "XY") && !part.FaceFrame &&
             !part.Holes && !part.Threads && !part.Bevel && !part.BevelCuts && Array.isArray(part.Profile)) {
-            const extrude = typeof module === "undefined" ? extrudeProfile : require("./sketch.js").extrudeProfile;
             const solid = extrude(part.Profile.map(({X,Y}) => [X,Y]), part.Height);
             if (triangles.length + solid.length > triangleLimit) throw new Error("This project exceeds the viewer's triangle limit.");
             for (const triangle of solid)
@@ -58,7 +68,7 @@ function parseProject(project) {
                 [point.X + part.X, point.Y + part.Y, point.Z + part.Z]));
         }
     }
-    return { triangles, skipped };
+    return { triangles, sketchTriangles, skipped };
 }
 
 if (typeof module !== "undefined") module.exports = { parseStl, parseProject };
@@ -98,7 +108,8 @@ function startViewer() {
     attach(gl.FRAGMENT_SHADER, `
         precision mediump float;
         varying float light;
-        void main() { gl_FragColor = vec4(vec3(0.76, 0.84, 0.94) * light, 1.0); }`);
+        uniform vec3 tint;
+        void main() { gl_FragColor = vec4(tint * light, 1.0); }`);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
         status.textContent = "The browser could not initialize the 3D renderer.";
@@ -114,6 +125,8 @@ function startViewer() {
         gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 24, offset);
     }
     const angles = gl.getUniformLocation(program, "angles"), scale = gl.getUniformLocation(program, "scale");
+    const tint = gl.getUniformLocation(program, "tint");
+    let solidVertexCount = 0;
     const pointers = new Map();
     let vertexCount = 0, yaw = -0.6, pitch = 0.5, zoom = 1, pending = false, loadSequence = 0;
 
@@ -130,7 +143,10 @@ function startViewer() {
         const fit = Math.min(width, height) * 0.84 * zoom;
         gl.uniform4f(angles, Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch));
         gl.uniform3f(scale, fit / width, fit / height, 0.9);
-        gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+        gl.uniform3f(tint, 0.76, 0.84, 0.94);
+        gl.drawArrays(gl.TRIANGLES, 0, solidVertexCount);
+        gl.uniform3f(tint, 0.29, 0.85, 0.72);
+        gl.drawArrays(gl.TRIANGLES, solidVertexCount, vertexCount - solidVertexCount);
     }
     function redraw() {
         if (!pending) {
@@ -149,9 +165,13 @@ function startViewer() {
         redraw();
     }
     let model = [];
-    let project = null;
+    const emptyProject = () => ({ Version: 11, Bed: { X: 220, Y: 220, Z: 250 }, Parts: [] });
+    let project = emptyProject(), selected = -1, editing = -1;
+    const undo = [], redo = [];
+    const byId = id => document.getElementById(id);
     const save = document.querySelector("#save");
-    function upload(triangles) {
+    function upload(solids, sketches = []) {
+    const triangles = solids.concat(sketches);
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (const triangle of triangles) for (const point of triangle) for (let i = 0; i < 3; i++) {
         if (!Number.isFinite(point[i])) throw new Error("The model contains invalid coordinates.");
@@ -175,9 +195,105 @@ function startViewer() {
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     if (gl.getError() !== gl.NO_ERROR) throw new Error("The model exceeds available graphics memory.");
     vertexCount = data.length / 6;
-        model = triangles;
-        document.querySelector("#export").disabled = false;
+        solidVertexCount = solids.length * 3;
+        model = solids;
+        document.querySelector("#export").disabled = !solids.length;
     }
+    function refreshParts() {
+        const panel = byId("parts");
+        panel.replaceChildren();
+        for (const [title, sketches] of [["Objects", false], ["Sketches", true]]) {
+            const heading = document.createElement("h3");
+            heading.textContent = title;
+            panel.append(heading);
+            project.Parts.forEach((part, index) => {
+                if ((part.Kind === "Sketch") !== sketches) return;
+                const row = document.createElement("div");
+                row.className = "part-row";
+                const pick = document.createElement("button");
+                pick.textContent = part.Name;
+                pick.setAttribute("aria-pressed", index === selected);
+                pick.onclick = () => { selected = index; refreshParts(); };
+                const visibility = document.createElement("button");
+                visibility.textContent = part.Hidden ? "○" : "◉";
+                visibility.setAttribute("aria-label", (part.Hidden ? "Show " : "Hide ") + part.Name);
+                visibility.onclick = () => changeParts(project.Parts.map((item, i) =>
+                    i === index ? { ...item, Hidden: !item.Hidden } : item));
+                row.append(pick, visibility);
+                panel.append(row);
+            });
+        }
+        const part = project.Parts[selected];
+        byId("edit-sketch").disabled = !editor.hidden || part?.Kind !== "Sketch" || !Array.isArray(part.Profile) ||
+            (part.Plane && part.Plane !== "XY") || !!part.FaceFrame || !!part.Dimensions || !!part.Constraints;
+        byId("extrude-part").disabled = !editor.hidden || part?.Kind !== "Sketch" || !part.Profile ||
+            (part.Plane && part.Plane !== "XY") || !!part.FaceFrame;
+        byId("move-part").disabled = !editor.hidden || !part;
+        byId("remove-part").disabled = !editor.hidden || !part;
+        byId("undo").disabled = !editor.hidden || !undo.length;
+        byId("redo").disabled = !editor.hidden || !redo.length;
+        save.disabled = !project.Parts.length;
+    }
+    function loadScene(next) {
+        const result = parseProject(next);
+        upload(result.triangles, result.sketchTriangles);
+        project = next;
+        refreshParts();
+        redraw();
+        return result;
+    }
+    function changeParts(parts, nextSelection = selected) {
+        const before = project;
+        try {
+            loadScene({ ...project, Version: Math.max(11, project.Version), Parts: parts });
+        } catch (error) {
+            status.textContent = error.message;
+            return false;
+        }
+        undo.push(before);
+        if (undo.length > 24) undo.shift();
+        redo.length = 0;
+        selected = nextSelection;
+        refreshParts();
+        return true;
+    }
+    function stepHistory(from, to) {
+        if (!from.length) return;
+        const current = project;
+        try { loadScene(from.at(-1)); } catch (error) { status.textContent = error.message; return; }
+        from.pop();
+        to.push(current);
+        selected = -1;
+        refreshParts();
+    }
+    byId("undo").onclick = () => stepHistory(undo, redo);
+    byId("redo").onclick = () => stepHistory(redo, undo);
+    byId("extrude-part").onclick = () => {
+        const value = prompt("Extrusion distance (mm)", "10");
+        if (value === null) return;
+        const source = project.Parts[selected];
+        const height = Number(value);
+        const link = source.SketchId ?? crypto.randomUUID();
+        const parts = [...project.Parts];
+        parts[selected] = { ...source, SketchId: link, Hidden: !source.AdditionalProfiles?.length && !source.OpenPaths?.length };
+        parts.push({ Kind: "Extrusion", Name: `Extrusion ${parts.length + 1}`, X: source.X, Y: source.Y, Z: source.Z,
+            Width: 0, Depth: 0, Height: height, Profile: source.Profile, SketchId: link });
+        if (changeParts(parts, parts.length - 1)) fit();
+    };
+    byId("move-part").onclick = () => {
+        const part = project.Parts[selected];
+        const value = prompt("Move by X, Y, Z (mm)", "0, 0, 0");
+        const offsets = value?.split(",").map(Number);
+        if (!offsets || offsets.length !== 3 || !offsets.every(Number.isFinite)) return;
+        changeParts(project.Parts.map(item => item === part || part.Kind === "Sketch" && part.SketchId && item.SketchId === part.SketchId
+            ? { ...item, X: item.X + offsets[0], Y: item.Y + offsets[1], Z: item.Z + offsets[2] } : item));
+    };
+    byId("remove-part").onclick = () => {
+        const removed = project.Parts[selected];
+        changeParts(project.Parts.filter(part => part !== removed).map(part =>
+            removed.Kind === "Sketch" && removed.SketchId && part.SketchId === removed.SketchId
+                ? { ...part, SketchId: undefined, SketchProfileIndex: undefined } : part), -1);
+    };
     const editor = document.querySelector("#sketch");
     const plane = document.querySelector("#sketch-plane");
     const outline = document.querySelector("#outline");
@@ -203,15 +319,27 @@ function startViewer() {
         canvas.hidden = active;
         document.querySelector("#start-sketch").disabled = active;
         document.querySelector("#fit").disabled = active;
+        byId("mode").textContent = active ? "Sketch Mode" : "Build Mode";
+        refreshParts();
         if (!active) redraw();
     }
     document.querySelector("#start-sketch").addEventListener("click", () => {
         ++loadSequence;
+        editing = -1;
         points.length = 0;
         drawSketch();
         showSketch(true);
         sketchHint();
     });
+    byId("edit-sketch").onclick = () => {
+        ++loadSequence;
+        editing = selected;
+        shape.value = "Polygon";
+        points.splice(0, points.length, ...project.Parts[selected].Profile.map(({X,Y}) => [X,Y]));
+        drawSketch();
+        showSketch(true);
+        status.textContent = "Undo points or append vertices, then finish the sketch.";
+    };
     function sketchHint() {
         status.textContent = {
             Polygon: "Tap the outline points in order. Extrude closes the outline.",
@@ -234,26 +362,37 @@ function startViewer() {
         showSketch(false);
         status.textContent = "Sketch canceled.";
     });
-    document.querySelector("#extrude").addEventListener("click", () => {
+    byId("finish-sketch").onclick = () => finishSketch(false);
+    byId("extrude").onclick = () => finishSketch(true);
+    function finishSketch(extrude) {
         try {
             const height = document.querySelector("#height").valueAsNumber;
             const profile = shapeProfile(shape.value, points);
-            upload(extrudeProfile(profile, height));
+            extrudeProfile(profile, extrude ? height : 1);
             const position = { X: 0, Y: 0, Z: 0, Width: 0, Depth: 0 };
-            project = { Version: 9, Bed: { X: 220, Y: 220, Z: 250 }, Parts: [
-                { ...position, Kind: "Sketch", Name: "Sketch 1", Height: 0, Hidden: true,
-                    Profile: profile.map(([X,Y]) => ({X,Y})) },
-                { ...position, Kind: "Extrusion", Name: "Extrusion 1", Height: height,
-                    Profile: profile.map(([X,Y]) => ({X,Y})) }
-            ] };
-            save.disabled = false;
+            const outline = profile.map(([X,Y]) => ({X,Y}));
+            const list = [...project.Parts];
+            const previous = list[editing];
+            const link = previous?.SketchId ?? crypto.randomUUID();
+            const index = editing < 0 ? list.length : editing;
+            list[index] = { ...position, Kind: "Sketch", Name: `Sketch ${index + 1}`, Height: 0,
+                ...previous, Profile: outline, SketchId: link, Hidden: extrude || previous?.Hidden || false };
+            if (previous?.SketchId) {
+                for (let i = 0; i < list.length; i++)
+                    if (list[i].Kind === "Extrusion" && list[i].SketchId === link && !list[i].SketchProfileIndex)
+                        list[i] = { ...list[i], Profile: outline };
+            }
+            if (extrude) list.push({ ...position, X: list[index].X, Y: list[index].Y, Z: list[index].Z,
+                Plane: list[index].Plane, FaceFrame: list[index].FaceFrame, Kind: "Extrusion",
+                Name: `Extrusion ${list.length + 1}`, Height: height, Profile: outline, SketchId: link });
+            if (!changeParts(list, extrude ? list.length - 1 : index)) return;
             showSketch(false);
             fit();
-            status.textContent = `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom`;
+            status.textContent = extrude ? `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom` : "Sketch saved.";
         } catch (error) {
             status.textContent = error.message;
         }
-    });
+    }
     document.querySelector("#export").addEventListener("click", () => {
         if (!model.length) return;
         download(new Blob([binaryStl(model)], { type: "model/stl" }), "LayerCAD-model.stl");
@@ -284,10 +423,15 @@ function startViewer() {
             const opened = projectFile ? JSON.parse(await file.text()) : null;
             const result = projectFile ? parseProject(opened) : parseStl(await file.arrayBuffer());
             if (sequence !== loadSequence) return;
-            if (!result.triangles.length) throw new Error("This project has no visible mesh bodies. Export an STL from LayerCAD to view its solid geometry.");
-            upload(result.triangles);
-            project = opened;
-            save.disabled = !project;
+            if (!projectFile && !result.triangles.length) throw new Error("This file has no triangles.");
+            upload(result.triangles, result.sketchTriangles);
+            project = opened ?? { ...emptyProject(), Parts: [{ Kind: "Mesh", Name: file.name, Width: 0, Depth: 0, Height: 0, X: 0, Y: 0, Z: 0,
+                Mesh: { Triangles: result.triangles.map(([a,b,c]) => {
+                    const point = ([X,Y,Z]) => ({X,Y,Z});
+                    return { A: point(a), B: point(b), C: point(c) };
+                }) } }] };
+            selected = -1;
+            undo.length = redo.length = 0;
             showSketch(false);
             status.textContent = `${file.name} · ${result.triangles.length.toLocaleString()} triangles · Drag to orbit · Pinch or scroll to zoom` +
                 (result.skipped ? ` · ${result.skipped} visible non-mesh items omitted` : "");
@@ -323,4 +467,5 @@ function startViewer() {
         scaleBy(Math.exp(-event.deltaY * 0.001));
     }, { passive: false });
     new ResizeObserver(redraw).observe(canvas);
+    refreshParts();
 }
