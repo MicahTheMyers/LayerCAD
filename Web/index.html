@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LayerCAD Viewer</title>
+<link rel="stylesheet" href="style.css">
+<header>
+  <h1>LayerCAD <span>Viewer</span></h1>
+  <label class="open">Open model<input id="file" type="file" accept=".layercad,.stl"></label>
+  <button id="fit" type="button">Fit view</button>
+</header>
+<main>
+  <canvas id="view" aria-label="3D model viewport"></canvas>
+  <p id="status" role="status">Open a LayerCAD mesh project or an STL file.</p>
+</main>
+<script src="viewer.js" defer></script>
+</html>

@@ -105,3 +105,8 @@ The Windows x64 solid geometry library is built from [Manifold 3.5.4](https://gi
 ## Current scope
 
 The editor supports sketches on the three standard planes and planar faces, solid extrusions, and mesh-based extrusion cuts and merges. Sketch constraints, analytic curves, assemblies, and slicing are outside the current implementation.
+# Cross-platform viewer preview
+
+The `Web/` folder contains a browser-based LayerCAD viewer intended for Android, iOS, and macOS. Serve the folder with a static web server and open its address in the device browser. It needs no backend and reads models locally on the device.
+
+Choose **Open model** to load a binary or ASCII STL, or a `.layercad` project containing visible mesh bodies. Use one finger to orbit, two fingers to pinch to zoom, or the mouse wheel on a Mac. For Windows sketches and parametric solids, export STL from LayerCAD first. Sketch editing and solid modeling are Windows features in this preview.
