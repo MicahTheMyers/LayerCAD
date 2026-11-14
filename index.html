@@ -3,17 +3,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LayerCAD Web</title>
-<link rel="stylesheet" href="style.css?v=editor-5">
+<link rel="stylesheet" href="style.css?v=workspace-1">
 <header>
-  <h1>LayerCAD <span>Web</span></h1>
+  <h1><img src="layercad.ico" width="28" height="28" alt="">LayerCAD</h1>
   <label class="open">Open model<input id="file" type="file" accept=".layercad,.stl"></label>
   <button id="export" type="button" disabled>Export STL</button>
   <button id="save" type="button" disabled>Save project</button>
   <button id="fit" type="button">Fit view</button>
 </header>
-<nav aria-label="Build tools">
-  <span class="mode" id="mode">Build Mode</span>
-  <button id="start-sketch" type="button">New sketch</button>
+<div class="mode" id="mode">Build Mode</div>
+<nav id="build-tools" aria-label="Build tools">
+  <div class="tool-group" aria-label="Create">
+  <button id="start-sketch" type="button">Create sketch</button>
   <button id="edit-sketch" type="button" disabled>Edit sketch</button>
   <button id="face-sketch" type="button" disabled>Sketch on face</button>
   <button id="extrude-part" type="button" disabled>Extrude</button>
@@ -23,6 +24,7 @@
     <option>Coil</option><option>Revolve</option><option>Loft</option><option>Sweep</option><option>Pipe</option>
     <option>Rib</option><option>Web</option>
   </select>
+  </div><div class="tool-group" aria-label="Modify">
   <button id="pattern" type="button" disabled>Linear pattern</button>
   <button id="hole" type="button" disabled>Hole</button>
   <button id="bevel" type="button" disabled>Bevel</button>
@@ -35,8 +37,47 @@
   <button id="circular-pattern" type="button" disabled>Circular pattern</button>
   <button id="move-part" type="button" disabled>Move</button>
   <button id="remove-part" type="button" disabled>Delete</button>
+  </div><div class="tool-group history" aria-label="History">
   <button id="undo" type="button" disabled>Undo</button>
   <button id="redo" type="button" disabled>Redo</button>
+  </div>
+</nav>
+<nav id="sketch-tools" aria-label="Sketch tools" hidden>
+  <details><summary title="Drawing tools" aria-label="Drawing tools">✎ ▾</summary>
+    <div class="tool-popover draw-tools" role="group" aria-label="Shapes">
+      <button type="button" data-shape="Polygon" aria-label="Polygon" title="Polygon">⬠</button>
+      <button type="button" data-shape="Rectangle" aria-label="Rectangle" title="Rectangle">▭</button>
+      <button type="button" data-shape="Circle" aria-label="Circle" title="Circle">○</button>
+      <button type="button" data-shape="Open path" aria-label="Polyline" title="Polyline">⌁</button>
+    </div>
+  </details>
+  <details><summary>Reference image</summary><div class="tool-popover">
+      <label class="open">Choose image<input id="reference-file" type="file" accept="image/png,image/jpeg"></label>
+      <button id="reference-settings" type="button" disabled>Image settings</button>
+      <button id="reference-calibrate" type="button" disabled>Calibrate image</button>
+      <button id="reference-remove" type="button" disabled>Remove image</button>
+      </div></details>
+      <label hidden>Shape <select id="shape"><option>Polygon</option><option>Rectangle</option><option>Circle</option><option>Open path</option></select></label>
+      <label>Plane <select id="plane-choice"><option>XY</option><option>XZ</option><option>YZ</option></select></label>
+      <label>Offset (mm) <input id="plane-offset" type="number" min="-10000" max="10000" step="any" value="0"></label>
+      <details><summary>Extrude</summary><div class="tool-popover">
+      <label>Distance (mm) <input id="height" type="number" min="-10000" max="10000" step="any" value="10"></label>
+      <label>Operation <select id="sketch-extrude-operation"><option>Add</option><option>Cut</option><option>Merge</option></select></label>
+      <button id="extrude" type="button">Extrude</button>
+      </div></details>
+      <button id="undo-point" type="button">Undo point</button>
+      <details><summary>Constraints</summary><div class="tool-popover">
+      <label>Vertex <select id="constraint-vertex" aria-label="Vertex for constraint"></select></label>
+      <select id="constraint-rule" aria-label="Apply constraint" disabled>
+        <option value="">Constrain…</option><option value="0">Horizontal edge</option>
+        <option value="1">Vertical edge</option><option value="2">Coincident with origin</option>
+        <option value="clear">Clear constraints</option>
+      </select>
+  </div></details>
+  <div class="sketch-actions">
+    <button id="cancel-sketch" type="button">Cancel sketch</button>
+    <button id="finish-sketch" type="button">Finish sketch</button>
+  </div>
 </nav>
 <main>
   <div id="workspace">
@@ -46,7 +87,8 @@
   <section id="sketch" hidden>
     <svg id="sketch-plane" viewBox="0 0 220 220" aria-label="XY sketch plane, 220 millimeters square">
       <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 H 0 V 10" fill="none" stroke="#29415a" stroke-width=".4"/></pattern></defs>
-      <rect width="220" height="220" fill="url(#grid)"/>
+      <rect width="220" height="220" fill="#1b2737"/>
+      <rect width="220" height="220" fill="url(#grid)" stroke="#52677e" stroke-width=".45"/>
       <image id="reference-overlay" preserveAspectRatio="none" pointer-events="none"/>
       <path d="M110 0 V220 M0 110 H220" stroke="#4e7591" stroke-width=".5"/>
       <path id="face-guide" fill="none" stroke="#9eb7d1" stroke-width=".6" stroke-dasharray="2 1"/>
@@ -55,31 +97,11 @@
       <polyline id="sketch-preview" fill="none" stroke="#83cbff" stroke-width=".7" pointer-events="none"/>
       <g id="vertices"></g>
     </svg>
-    <div class="sketch-tools">
-      <label class="open">Reference image<input id="reference-file" type="file" accept="image/png,image/jpeg"></label>
-      <button id="reference-settings" type="button" disabled>Image settings</button>
-      <button id="reference-calibrate" type="button" disabled>Calibrate image</button>
-      <button id="reference-remove" type="button" disabled>Remove image</button>
-      <label>Shape <select id="shape"><option>Polygon</option><option>Rectangle</option><option>Circle</option><option>Open path</option></select></label>
-      <label>Plane <select id="plane-choice"><option>XY</option><option>XZ</option><option>YZ</option></select></label>
-      <label>Offset (mm) <input id="plane-offset" type="number" min="-10000" max="10000" step="any" value="0"></label>
-      <label>Distance (mm) <input id="height" type="number" min="-10000" max="10000" step="any" value="10"></label>
-      <label>Operation <select id="sketch-extrude-operation"><option>Add</option><option>Cut</option><option>Merge</option></select></label>
-      <button id="undo-point" type="button">Undo point</button>
-      <label>Vertex <select id="constraint-vertex" aria-label="Vertex for constraint"></select></label>
-      <select id="constraint-rule" aria-label="Apply constraint" disabled>
-        <option value="">Constrain…</option><option value="0">Horizontal edge</option>
-        <option value="1">Vertical edge</option><option value="2">Coincident with origin</option>
-        <option value="clear">Clear constraints</option>
-      </select>
-      <button id="extrude" type="button">Extrude</button>
-      <button id="finish-sketch" type="button">Finish sketch</button>
-      <button id="cancel-sketch" type="button">Cancel</button>
-    </div>
+
   </section>
   </div>
   </div>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-16" defer></script>
+<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=workspace-1" defer></script>
 </html>

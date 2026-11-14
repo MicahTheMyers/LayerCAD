@@ -32,3 +32,36 @@ aside h3 { font-size: 12px; color: #9eb7d1; margin: 8px 0 4px; }
 .part-row button { background: transparent; border-color: transparent; padding: 4px; }
 .part-row button[aria-pressed=true] { background: #123967; border-color: #559fff; }
 @media (max-width: 500px) { aside { width: 100%; max-height: 125px; border-right: none; border-bottom: 1px solid #29415a; } #workspace { flex-direction: column; } }
+
+/* Workspace and mode-specific ribbons */
+:root { background: #10151f; }
+body { padding: 0; gap: 0; }
+header, main, nav { border-radius: 0; }
+header { min-height: 50px; background: #1b2432; }
+h1 { display: flex; gap: 8px; align-items: center; }
+.mode { align-self: flex-start; margin-left: 10px; padding: 5px 9px; border: 0; border-bottom: 2px solid #63dcca; border-radius: 0; background: transparent; text-transform: uppercase; }
+nav { min-height: 52px; background: #232e3e; padding: 5px 8px; }
+nav button, nav summary, header button, header .open { min-height: 36px; padding: 6px 9px; background: transparent; border-color: transparent; border-radius: 4px; }
+nav button:not(:disabled):hover, nav summary:hover, header button:not(:disabled):hover, header .open:hover { background: #334659; }
+nav button[aria-pressed=true] { box-shadow: inset 0 -2px #63dcca; color: #b8f6ea; }
+nav select, nav input { background: #182432; color: inherit; border: 1px solid #52647a; border-radius: 4px; padding: 4px; font: inherit; }
+.tool-group { display: flex; align-items: center; gap: 3px; padding-right: 9px; border-right: 1px solid #425165; }
+.history, .sketch-actions { margin-left: auto; display: flex; gap: 4px; }
+#sketch-tools { overflow: visible; position: relative; z-index: 2; flex-wrap: wrap; }
+nav details > summary { display: flex; align-items: center; cursor: pointer; white-space: nowrap; }
+nav details[open] > summary { background: #334659; }
+.tool-popover { position: absolute; z-index: 3; display: grid; gap: 6px; min-width: 140px; max-width: calc(100vw - 16px); padding: 8px; background: #263345; border: 1px solid #52647a; border-radius: 5px; box-shadow: 0 6px 18px #0007; }
+.draw-tools { display: flex; }
+.draw-tools button { font-size: 23px; }
+#finish-sketch { background: #235844; color: #dcffec; }
+#cancel-sketch { background: #652e37; color: #ffebee; }
+#sketch { background: #121923; }
+aside { background: #192231; }
+#status { padding: 5px 10px; font-size: 13px; }
+@media (max-width: 600px) {
+  #sketch-tools details { position: static; }
+  .tool-popover { left: 8px; top: 100%; }
+  .sketch-actions { margin-left: 0; }
+}
+#build-tools { font-size: 13px; scrollbar-width: thin; }
+#build-tools button { padding-inline: 6px; }
