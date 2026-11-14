@@ -1,23 +1,41 @@
 "use strict";
 
 const triangleLimit = 250000;
+const largeStlPreviewLimit = 40000;
 
 function parseStl(buffer) {
     const view = new DataView(buffer);
     const count = buffer.byteLength >= 84 ? view.getUint32(80, true) : 0;
     if (count && 84 + count * 50 === buffer.byteLength) {
-        if (count > triangleLimit) throw new Error("This STL exceeds the viewer's triangle limit.");
-        return Array.from({ length: count }, (_, i) =>
+        const length = count > triangleLimit ? largeStlPreviewLimit : count;
+        const triangles = Array.from({ length }, (_, sample) => {
+            const i = Math.floor(sample * count / length);
+            return (
             Array.from({ length: 3 }, (_, j) =>
                 Array.from({ length: 3 }, (_, k) => view.getFloat32(96 + i * 50 + j * 12 + k * 4, true))));
+        });
+        return { triangles, total: count, skipped: 0 };
     }
-    const vertices = [];
-    for (const match of new TextDecoder().decode(buffer).matchAll(/^\s*vertex\s+(\S+)\s+(\S+)\s+(\S+)\s*$/gim)) {
-        vertices.push(match.slice(1).map(Number));
-        if (vertices.length > triangleLimit * 3) throw new Error("This STL exceeds the viewer's triangle limit.");
+    const source = new TextDecoder().decode(buffer);
+    const vertices = () => source.matchAll(/^[ \t]*vertex[ \t]+(\S+)[ \t]+(\S+)[ \t]+(\S+)[ \t]*\r?$/gim);
+    let vertexCount = 0;
+    for (const vertex of vertices()) vertexCount++;
+    if (!vertexCount || vertexCount % 3) throw new Error("Invalid STL file.");
+    const total = vertexCount / 3;
+    const length = total > triangleLimit ? largeStlPreviewLimit : total;
+    const triangles = [];
+    let index = 0;
+    let triangle = [];
+    for (const vertex of vertices()) {
+        const face = Math.floor(index++ / 3);
+        if (face !== Math.floor(triangles.length * total / length)) continue;
+        triangle.push(vertex.slice(1).map(Number));
+        if (triangle.length === 3) {
+            triangles.push(triangle);
+            triangle = [];
+        }
     }
-    if (!vertices.length || vertices.length % 3) throw new Error("Invalid STL file.");
-    return Array.from({ length: vertices.length / 3 }, (_, i) => vertices.slice(i * 3, i * 3 + 3));
+    return { triangles, total, skipped: 0 };
 }
 
 function parseProject(project) {
@@ -108,10 +126,12 @@ function startViewer() {
         event.target.value = "";
         const sequence = ++loadSequence;
         try {
-            if (file.size > 64 * 1024 * 1024) throw new Error("Choose a model smaller than 64 MB.");
-            const result = file.name.toLowerCase().endsWith(".layercad")
+            const projectFile = file.name.toLowerCase().endsWith(".layercad");
+            const sizeLimit = projectFile ? 64 : 256;
+            if (file.size > sizeLimit * 1024 * 1024) throw new Error(`Choose a file up to ${sizeLimit} MB.`);
+            const result = projectFile
                 ? parseProject(JSON.parse(await file.text()))
-                : { triangles: parseStl(await file.arrayBuffer()), skipped: 0 };
+                : parseStl(await file.arrayBuffer());
             if (sequence !== loadSequence) return;
             if (!result.triangles.length) throw new Error("This project has no visible mesh bodies. Export an STL from LayerCAD to view its solid geometry.");
             const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
@@ -123,7 +143,10 @@ function startViewer() {
             triangles = result.triangles;
             center = min.map((value, i) => (value + max[i]) / 2);
             radius = Math.max(0.001, Math.hypot(...max.map((value, i) => value - center[i])));
-            status.textContent = `${file.name} · ${triangles.length.toLocaleString()} triangles · Drag to orbit · Pinch or scroll to zoom` +
+            const detail = result.total > triangles.length
+                ? `Sampled preview · ${triangles.length.toLocaleString()} of ${result.total.toLocaleString()} triangles`
+                : `${triangles.length.toLocaleString()} triangles`;
+            status.textContent = `${file.name} · ${detail} · Drag to orbit · Pinch or scroll to zoom` +
                 (result.skipped ? ` · ${result.skipped} visible non-mesh items omitted` : "");
             fit();
         } catch (error) {
