@@ -33,29 +33,75 @@ function parseStl(buffer) {
     return { triangles, total, skipped: 0 };
 }
 
+function modelPoint(part, [x, y, z]) {
+    let local;
+    if (part.FaceFrame) {
+        const { Horizontal: u, Vertical: v } = part.FaceFrame;
+        local = [
+            u.X*x + v.X*y + (u.Y*v.Z-u.Z*v.Y)*z,
+            u.Y*x + v.Y*y + (u.Z*v.X-u.X*v.Z)*z,
+            u.Z*x + v.Z*y + (u.X*v.Y-u.Y*v.X)*z
+        ];
+    } else {
+        local = part.Plane === "XZ" ? [x,-z,y] : part.Plane === "YZ" ? [z,x,y] : [x,y,z];
+    }
+    return [local[0]+part.X, local[1]+part.Y, local[2]+part.Z];
+}
+
 function parseProject(project) {
     if (!Array.isArray(project.Parts)) throw new Error("Invalid LayerCAD project.");
     const triangles = [];
     const sketchTriangles = [];
     const extrude = typeof module === "undefined" ? extrudeProfile : require("./sketch.js").extrudeProfile;
+    const makeShape = typeof module === "undefined" ? shapeProfile : require("./sketch.js").shapeProfile;
     let skipped = 0;
     for (const part of project.Parts) {
         if (part.Hidden) continue;
-        if (part.Kind === "Sketch" && (!part.Plane || part.Plane === "XY") && !part.FaceFrame && part.Profile) {
+        if (["Box", "Cylinder", "Tube"].includes(part.Kind) && !part.Holes && !part.Threads && !part.Bevel && !part.BevelCuts) {
+            const count = 96;
+            const ring = radius => Array.from({ length: count }, (_, i) =>
+                [radius * Math.cos(i * 2 * Math.PI / count), radius * Math.sin(i * 2 * Math.PI / count)]);
+            const outline = part.Kind === "Box"
+                ? makeShape("Rectangle", [[-part.Width/2,-part.Depth/2],[part.Width/2,part.Depth/2]])
+                : ring(part.Width/2);
+            let solid;
+            if (part.Kind === "Tube") {
+                solid = [];
+                const inner = ring(part.Depth/2);
+                const vertex = ([x,y], z) => [x,y,z];
+                const quad = (a,b,c,d) => solid.push([a,b,c],[a,c,d]);
+                for (let i=0; i<count; i++) {
+                    const j=(i+1)%count;
+                    const a=vertex(outline[i],0), b=vertex(outline[j],0);
+                    const c=vertex(inner[i],0), d=vertex(inner[j],0);
+                    const e=vertex(outline[i],part.Height), f=vertex(outline[j],part.Height);
+                    const g=vertex(inner[i],part.Height), h=vertex(inner[j],part.Height);
+                    quad(a,b,f,e); quad(d,c,g,h); quad(b,a,c,d); quad(e,f,h,g);
+                }
+            } else {
+                solid = extrude(outline, part.Height);
+            }
+            if (triangles.length + solid.length > triangleLimit)
+                throw new Error("This project exceeds the viewer's triangle limit.");
+            for (const triangle of solid)
+                triangles.push(triangle.map(([x,y,z]) => [x+part.X,y+part.Y,z+part.Z]));
+            continue;
+        }
+        if (part.Kind === "Sketch" && part.Profile) {
             for (const profile of [part.Profile, ...(part.AdditionalProfiles ?? [])]) {
                 const caps = extrude(profile.map(({X,Y}) => [X,Y]), 1).slice(0, 2 * (profile.length - 2));
                 for (let i = 1; i < caps.length; i += 2)
-                    sketchTriangles.push(caps[i].map(([x,y]) => [x+part.X,y+part.Y,part.Z+0.008]));
+                    sketchTriangles.push(caps[i].map(([x,y]) => modelPoint(part, [x,y,0.008])));
             }
             if (part.OpenPaths?.length) skipped++;
             continue;
         }
-        if (part.Kind === "Extrusion" && (!part.Plane || part.Plane === "XY") && !part.FaceFrame &&
+        if (part.Kind === "Extrusion" &&
             !part.Holes && !part.Threads && !part.Bevel && !part.BevelCuts && Array.isArray(part.Profile)) {
             const solid = extrude(part.Profile.map(({X,Y}) => [X,Y]), part.Height);
             if (triangles.length + solid.length > triangleLimit) throw new Error("This project exceeds the viewer's triangle limit.");
             for (const triangle of solid)
-                triangles.push(triangle.map(([x,y,z]) => [x+part.X,y+part.Y,z+part.Z]));
+                triangles.push(triangle.map(point => modelPoint(part, point)));
             continue;
         }
         if (!Array.isArray(part.Mesh?.Triangles)) {
@@ -225,10 +271,10 @@ function startViewer() {
         }
         const part = project.Parts[selected];
         byId("edit-sketch").disabled = !editor.hidden || part?.Kind !== "Sketch" || !Array.isArray(part.Profile) ||
-            (part.Plane && part.Plane !== "XY") || !!part.FaceFrame || !!part.Dimensions || !!part.Constraints;
-        byId("extrude-part").disabled = !editor.hidden || part?.Kind !== "Sketch" || !part.Profile ||
-            (part.Plane && part.Plane !== "XY") || !!part.FaceFrame;
+            !!part.Dimensions || !!part.Constraints;
+        byId("extrude-part").disabled = !editor.hidden || part?.Kind !== "Sketch" || !part.Profile;
         byId("move-part").disabled = !editor.hidden || !part;
+        byId("pattern").disabled = !editor.hidden || !part || part.Kind === "Sketch";
         byId("remove-part").disabled = !editor.hidden || !part;
         byId("undo").disabled = !editor.hidden || !undo.length;
         byId("redo").disabled = !editor.hidden || !redo.length;
@@ -268,6 +314,43 @@ function startViewer() {
     }
     byId("undo").onclick = () => stepHistory(undo, redo);
     byId("redo").onclick = () => stepHistory(redo, undo);
+    byId("primitive").onclick = () => {
+        const kind = prompt("Primitive type: Box, Cylinder, or Tube", "Box")?.trim().toLowerCase();
+        const types = { box: "Box", cylinder: "Cylinder", tube: "Tube" };
+        if (!kind || !Object.hasOwn(types, kind)) return;
+        const raw = prompt(kind === "box" ? "Width, depth, height (mm)" :
+            kind === "tube" ? "Outer diameter, inner diameter, height (mm)" :
+                "Diameter, height (mm)", kind === "cylinder" ? "30, 20" : "30, 20, 10");
+        if (raw === null) return;
+        const dimensions = raw.split(",").map(Number);
+        if (dimensions.length !== (kind === "cylinder" ? 2 : 3) ||
+            !dimensions.every(value => Number.isFinite(value) && value >= 0.01 && value <= 10000) ||
+            kind === "tube" && dimensions[0] - dimensions[1] < 0.02) {
+            status.textContent = "Enter valid dimensions. A tube needs a larger outer diameter.";
+            return;
+        }
+        const Kind = types[kind], Width = dimensions[0], Height = dimensions.at(-1);
+        const Depth = kind === "cylinder" ? Width : dimensions[1];
+        if (changeParts([...project.Parts, { Kind, Width, Depth, Height, X: 0, Y: 0, Z: 0,
+            Name: `${Kind} ${project.Parts.length + 1}` }], project.Parts.length)) fit();
+    };
+    byId("pattern").onclick = () => {
+        const source = project.Parts[selected];
+        const input = prompt("Number of copies, then X, Y, Z spacing (mm)", "3, 30, 0, 0");
+        if (input === null) return;
+        const values = input.split(",").map(Number);
+        const [count, x, y, z] = values;
+        if (values.length !== 4 || !values.every(Number.isFinite) || !Number.isInteger(count) ||
+            count < 1 || count > 40 || ![x,y,z].some(value => value !== 0) ||
+            ![source.X+x*count,source.Y+y*count,source.Z+z*count].every(value => Math.abs(value) <= 10000)) {
+            status.textContent = "Enter 1–40 copies and a nonzero spacing within the project bounds.";
+            return;
+        }
+        const copies = Array.from({ length: count }, (_, i) => ({ ...source,
+            X: source.X+x*(i+1), Y: source.Y+y*(i+1), Z: source.Z+z*(i+1),
+            Name: `${source.Name} copy ${i+1}`, SketchId: undefined, SketchProfileIndex: undefined }));
+        if (changeParts([...project.Parts, ...copies])) fit();
+    };
     byId("extrude-part").onclick = () => {
         const value = prompt("Extrusion distance (mm)", "10");
         if (value === null) return;
@@ -277,7 +360,8 @@ function startViewer() {
         const parts = [...project.Parts];
         parts[selected] = { ...source, SketchId: link, Hidden: !source.AdditionalProfiles?.length && !source.OpenPaths?.length };
         parts.push({ Kind: "Extrusion", Name: `Extrusion ${parts.length + 1}`, X: source.X, Y: source.Y, Z: source.Z,
-            Width: 0, Depth: 0, Height: height, Profile: source.Profile, SketchId: link });
+            Width: 0, Depth: 0, Height: height, Profile: source.Profile, SketchId: link,
+            Plane: source.Plane, FaceFrame: source.FaceFrame });
         if (changeParts(parts, parts.length - 1)) fit();
     };
     byId("move-part").onclick = () => {
@@ -320,12 +404,16 @@ function startViewer() {
         document.querySelector("#start-sketch").disabled = active;
         document.querySelector("#fit").disabled = active;
         byId("mode").textContent = active ? "Sketch Mode" : "Build Mode";
+        byId("primitive").disabled = active;
         refreshParts();
         if (!active) redraw();
     }
     document.querySelector("#start-sketch").addEventListener("click", () => {
         ++loadSequence;
         editing = -1;
+        byId("plane-choice").disabled = byId("plane-offset").disabled = false;
+        byId("plane-choice").value = "XY";
+        byId("plane-offset").value = 0;
         points.length = 0;
         drawSketch();
         showSketch(true);
@@ -334,6 +422,10 @@ function startViewer() {
     byId("edit-sketch").onclick = () => {
         ++loadSequence;
         editing = selected;
+        const part = project.Parts[selected];
+        byId("plane-choice").value = part.Plane ?? "XY";
+        byId("plane-offset").value = part.Plane === "XZ" ? -part.Y : part.Plane === "YZ" ? part.X : part.Z;
+        byId("plane-choice").disabled = byId("plane-offset").disabled = true;
         shape.value = "Polygon";
         points.splice(0, points.length, ...project.Parts[selected].Profile.map(({X,Y}) => [X,Y]));
         drawSketch();
@@ -369,7 +461,12 @@ function startViewer() {
             const height = document.querySelector("#height").valueAsNumber;
             const profile = shapeProfile(shape.value, points);
             extrudeProfile(profile, extrude ? height : 1);
-            const position = { X: 0, Y: 0, Z: 0, Width: 0, Depth: 0 };
+            const plane = byId("plane-choice").value;
+            const offset = byId("plane-offset").valueAsNumber;
+            if (editing < 0 && (!Number.isFinite(offset) || Math.abs(offset) > 10000))
+                throw new Error("Enter a plane offset between −10,000 and 10,000 mm.");
+            const [X,Y,Z] = editing < 0 ? modelPoint({ Plane: plane, X: 0, Y: 0, Z: 0 }, [0,0,offset]) : [0,0,0];
+            const position = { X, Y, Z, Plane: plane, Width: 0, Depth: 0 };
             const outline = profile.map(([X,Y]) => ({X,Y}));
             const list = [...project.Parts];
             const previous = list[editing];
