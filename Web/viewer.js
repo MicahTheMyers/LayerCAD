@@ -1,15 +1,14 @@
 "use strict";
 
 const triangleLimit = 250000;
-const largeStlPreviewLimit = 40000;
+
 
 function parseStl(buffer) {
     const view = new DataView(buffer);
     const count = buffer.byteLength >= 84 ? view.getUint32(80, true) : 0;
     if (count && 84 + count * 50 === buffer.byteLength) {
-        const length = count > triangleLimit ? largeStlPreviewLimit : count;
-        const triangles = Array.from({ length }, (_, sample) => {
-            const i = Math.floor(sample * count / length);
+
+        const triangles = Array.from({ length: count }, (_, i) => {
             return (
             Array.from({ length: 3 }, (_, j) =>
                 Array.from({ length: 3 }, (_, k) => view.getFloat32(96 + i * 50 + j * 12 + k * 4, true))));
@@ -22,13 +21,9 @@ function parseStl(buffer) {
     for (const vertex of vertices()) vertexCount++;
     if (!vertexCount || vertexCount % 3) throw new Error("Invalid STL file.");
     const total = vertexCount / 3;
-    const length = total > triangleLimit ? largeStlPreviewLimit : total;
     const triangles = [];
-    let index = 0;
     let triangle = [];
     for (const vertex of vertices()) {
-        const face = Math.floor(index++ / 3);
-        if (face !== Math.floor(triangles.length * total / length)) continue;
         triangle.push(vertex.slice(1).map(Number));
         if (triangle.length === 3) {
             triangles.push(triangle);
@@ -62,46 +57,71 @@ if (typeof document !== "undefined") startViewer();
 
 function startViewer() {
     const canvas = document.querySelector("#view");
-    const context = canvas.getContext("2d");
     const status = document.querySelector("#status");
+    const gl = canvas.getContext("webgl");
+    if (!gl) {
+        status.textContent = "This browser needs WebGL enabled to display models.";
+        return;
+    }
+    const program = gl.createProgram();
+    function attach(type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        gl.attachShader(program, shader);
+        gl.deleteShader(shader);
+    }
+    attach(gl.VERTEX_SHADER, `
+        attribute vec3 position;
+        attribute vec3 normal;
+        uniform vec4 angles;
+        uniform vec3 scale;
+        varying float light;
+        vec3 rotate(vec3 p) {
+            float depth = p.x * angles.y + p.y * angles.x;
+            return vec3(p.x * angles.x - p.y * angles.y,
+                p.z * angles.z + depth * angles.w, depth * angles.z - p.z * angles.w);
+        }
+        void main() {
+            gl_Position = vec4(rotate(position) * scale, 1.0);
+            light = 0.42 + 0.58 * abs(dot(rotate(normal), normalize(vec3(-0.35, 0.5, -1.0))));
+        }`);
+    attach(gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        varying float light;
+        void main() { gl_FragColor = vec4(vec3(0.76, 0.84, 0.94) * light, 1.0); }`);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        status.textContent = "The browser could not initialize the 3D renderer.";
+        return;
+    }
+    gl.useProgram(program);
+    gl.enable(gl.DEPTH_TEST);
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    for (const [name, offset] of [["position", 0], ["normal", 12]]) {
+        const location = gl.getAttribLocation(program, name);
+        gl.enableVertexAttribArray(location);
+        gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 24, offset);
+    }
+    const angles = gl.getUniformLocation(program, "angles"), scale = gl.getUniformLocation(program, "scale");
     const pointers = new Map();
-    let triangles = [], center = [0, 0, 0], radius = 1;
-    let yaw = -0.6, pitch = 0.5, zoom = 1, pending = false, loadSequence = 0;
+    let vertexCount = 0, yaw = -0.6, pitch = 0.5, zoom = 1, pending = false, loadSequence = 0;
 
     function draw() {
         pending = false;
         const ratio = Math.min(devicePixelRatio || 1, 2);
         const width = Math.round(canvas.clientWidth * ratio), height = Math.round(canvas.clientHeight * ratio);
+        if (!width || !height) return;
         if (canvas.width !== width) canvas.width = width;
         if (canvas.height !== height) canvas.height = height;
-        context.clearRect(0, 0, width, height);
-        const scale = Math.min(width, height) * 0.42 * zoom / radius;
-        const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-        const project = point => {
-            const x = point[0] - center[0], y = point[1] - center[1], z = point[2] - center[2];
-            const depth = x * sy + y * cy;
-            return [width / 2 + (x * cy - y * sy) * scale, height / 2 - (z * cp + depth * sp) * scale, depth * cp - z * sp];
-        };
-        const faces = triangles.map(triangle => {
-            const vertices = triangle.map(project);
-            const [a, b, c] = vertices;
-            const winding = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-            return { vertices, winding, depth: a[2] + b[2] + c[2] };
-        }).filter(face => face.winding < 0).sort((a, b) => b.depth - a.depth);
-        for (const { vertices: [a, b, c] } of faces) {
-            const dx = b[0] - a[0], dy = b[1] - a[1], dz = (b[2] - a[2]) * scale;
-            const ex = c[0] - a[0], ey = c[1] - a[1], ez = (c[2] - a[2]) * scale;
-            const nx = dy * ez - dz * ey, ny = dz * ex - dx * ez, nz = dx * ey - dy * ex;
-            const light = Math.max(0, (nx * 0.3 - ny * 0.4 - nz * 0.85) / Math.hypot(nx, ny, nz));
-            const tone = Math.round(110 + 125 * light);
-            context.fillStyle = `rgb(${tone - 14} ${tone} ${Math.min(255, tone + 20)})`;
-            context.beginPath();
-            context.moveTo(a[0], a[1]);
-            context.lineTo(b[0], b[1]);
-            context.lineTo(c[0], c[1]);
-            context.closePath();
-            context.fill();
-        }
+        gl.viewport(0, 0, width, height);
+        gl.clearColor(10 / 255, 20 / 255, 34 / 255, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        const fit = Math.min(width, height) * 0.84 * zoom;
+        gl.uniform4f(angles, Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch));
+        gl.uniform3f(scale, fit / width, fit / height, 0.9);
+        gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
     }
     function redraw() {
         if (!pending) {
@@ -140,13 +160,24 @@ function startViewer() {
                 min[i] = Math.min(min[i], point[i]);
                 max[i] = Math.max(max[i], point[i]);
             }
-            triangles = result.triangles;
-            center = min.map((value, i) => (value + max[i]) / 2);
-            radius = Math.max(0.001, Math.hypot(...max.map((value, i) => value - center[i])));
-            const detail = result.total > triangles.length
-                ? `Sampled preview · ${triangles.length.toLocaleString()} of ${result.total.toLocaleString()} triangles`
-                : `${triangles.length.toLocaleString()} triangles`;
-            status.textContent = `${file.name} · ${detail} · Drag to orbit · Pinch or scroll to zoom` +
+            const center = min.map((value, i) => (value + max[i]) / 2);
+            const radius = Math.max(0.001, Math.hypot(...max.map((value, i) => value - center[i])));
+            const data = new Float32Array(result.triangles.length * 18);
+            let offset = 0;
+            for (const [a,b,c] of result.triangles) {
+                const x = b[0]-a[0], y = b[1]-a[1], z = b[2]-a[2];
+                const u = c[0]-a[0], v = c[1]-a[1], w = c[2]-a[2];
+                const normal = [y*w-z*v, z*u-x*w, x*v-y*u];
+                const length = Math.hypot(...normal) || 1;
+                for (const point of [a,b,c]) {
+                    for (let i=0;i<3;i++) data[offset++] = (point[i]-center[i])/radius;
+                    for (const component of normal) data[offset++] = component/length;
+                }
+            }
+            gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+            if (gl.getError() !== gl.NO_ERROR) throw new Error("The model exceeds available graphics memory.");
+            vertexCount = data.length / 6;
+            status.textContent = `${file.name} · ${result.triangles.length.toLocaleString()} triangles · Drag to orbit · Pinch or scroll to zoom` +
                 (result.skipped ? ` · ${result.skipped} visible non-mesh items omitted` : "");
             fit();
         } catch (error) {
