@@ -9,6 +9,7 @@
   <label class="open">Open model<input id="file" type="file" accept=".layercad,.stl"></label>
   <button id="start-sketch" type="button">New sketch</button>
   <button id="export" type="button" disabled>Export STL</button>
+  <button id="save" type="button" disabled>Save project</button>
   <button id="fit" type="button">Fit view</button>
 </header>
 <main>
@@ -22,6 +23,7 @@
       <g id="vertices"></g>
     </svg>
     <div class="sketch-tools">
+      <label>Shape <select id="shape"><option>Polygon</option><option>Rectangle</option><option>Circle</option></select></label>
       <label>Height (mm) <input id="height" type="number" min="0.01" max="10000" step="any" value="10"></label>
       <button id="undo-point" type="button">Undo point</button>
       <button id="extrude" type="button">Extrude</button>
@@ -30,5 +32,5 @@
   </section>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-2" defer></script><script src="viewer.js?v=editor-2" defer></script>
+<script src="sketch.js?v=editor-3" defer></script><script src="viewer.js?v=editor-3" defer></script>
 </html>

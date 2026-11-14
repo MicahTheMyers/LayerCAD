@@ -59,4 +59,16 @@ function binaryStl(triangles) {
     return bytes;
 }
 
-if (typeof module !== "undefined") module.exports={extrudeProfile,binaryStl};
+function shapeProfile(shape, points) {
+    if (shape === "Polygon") return points;
+    if (points.length !== 2) throw new Error("Place two points to define the shape.");
+    const [[x,y],[u,v]] = points;
+    if (shape === "Rectangle") return [[x,y],[u,y],[u,v],[x,v]];
+    const radius = Math.hypot(u-x,v-y);
+    return Array.from({ length: 96 }, (_, i) => {
+        const angle = i * Math.PI / 48;
+        return [x + radius * Math.cos(angle), y + radius * Math.sin(angle)];
+    });
+}
+
+if (typeof module !== "undefined") module.exports={extrudeProfile,binaryStl,shapeProfile};
