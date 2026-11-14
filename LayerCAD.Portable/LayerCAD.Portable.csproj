@@ -7,6 +7,7 @@
   <ItemGroup>
     <Compile Include="../Geometry.cs;../BuildFeatures.cs;../HoleGeometry.cs;../IntersectingBores.cs;../ModelingMeshes.cs;../PolygonBevel.cs;../RoundBevel.cs;../SelectiveBoxBevel.cs;../ThreadGeometry.cs;../MetricThreadSize.cs;../SolidBoolean.cs;../SketchGeometry.cs;../LayerCAD.Core/ProfileExtrusion.cs;../SketchMetadata.cs" />
     <InternalsVisibleTo Include="LayerCAD.Browser" />
+    <Compile Include="../SketchSurface.cs;../TrianglePicker.cs"/>
     <PackageReference Include="LibTessDotNet" Version="1.1.15" />
   </ItemGroup>
 </Project>

@@ -2,6 +2,7 @@ using System.Runtime.InteropServices.JavaScript;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Runtime.Versioning;
+using System.Windows.Media.Media3D;
 
 namespace LayerCAD;
 
@@ -17,6 +18,24 @@ public static partial class BrowserGeometry
         if (part is null || !part.IsValid())
             throw new ArgumentException("This part has invalid geometry or dimensions.");
         return JsonSerializer.Serialize(Geometry.Build(part), BrowserJson.Default.ListTriangle);
+    }
+
+    [JSExport]
+    public static string PickFace(string json)
+    {
+        var request = JsonSerializer.Deserialize(json, BrowserJson.Default.FacePickRequest);
+        if (request is null || request.Part.Kind == PartKind.Sketch || !request.Part.IsValid())
+            return "null";
+        var mesh = Geometry.Build(request.Part);
+        var picker = new TrianglePicker(mesh);
+        double distance = double.PositiveInfinity;
+        int index = picker.Find(request.Origin, request.Direction, 0, bothSides: true, ref distance);
+        var surface = index < 0 ? null : SketchSurface.Find(request.Part, mesh, index);
+        if (surface is null)
+            return "null";
+        var center = surface.Center();
+        var guide = surface.Guide(center).Select(edge => new[] { edge.Start, edge.End }).ToArray();
+        return JsonSerializer.Serialize(new FacePickResult(center, surface.Frame, guide, distance), BrowserJson.Default.FacePickResult);
     }
 
     [JSExport]
@@ -50,4 +69,9 @@ public static partial class BrowserGeometry
 [JsonSerializable(typeof(Part))]
 [JsonSerializable(typeof(Part[]))]
 [JsonSerializable(typeof(List<Triangle>))]
+[JsonSerializable(typeof(FacePickRequest))]
+[JsonSerializable(typeof(FacePickResult))]
 internal partial class BrowserJson : JsonSerializerContext;
+
+internal sealed record FacePickRequest(Part Part, Point3D Origin, Vector3D Direction);
+internal sealed record FacePickResult(Point3D Center, SketchFrame Frame, SketchPoint[][] Guide, double Distance);
