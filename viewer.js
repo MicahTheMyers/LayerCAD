@@ -229,6 +229,7 @@ function startViewer() {
     const engineReady = import("./engine/engine.js").then(engine => {
         geometryEngine = engine;
         modeling.disabled = !editor.hidden;
+        refreshParts();
     }).catch(() => {
         status.textContent = "The advanced geometry engine could not load. Basic editing is available.";
     });
@@ -291,6 +292,9 @@ function startViewer() {
         byId("extrude-part").disabled = !editor.hidden || part?.Kind !== "Sketch" || !part.Profile;
         byId("move-part").disabled = !editor.hidden || !part;
         byId("pattern").disabled = !editor.hidden || !part || part.Kind === "Sketch";
+        byId("hole").disabled = !editor.hidden || !geometryEngine ||
+            !["Box", "Cylinder", "Extrusion"].includes(part?.Kind);
+        byId("bevel").disabled = !editor.hidden || !geometryEngine || part?.Kind !== "Box";
         byId("remove-part").disabled = !editor.hidden || !part;
         byId("undo").disabled = !editor.hidden || !undo.length;
         byId("redo").disabled = !editor.hidden || !redo.length;
@@ -330,6 +334,33 @@ function startViewer() {
     }
     byId("undo").onclick = () => stepHistory(undo, redo);
     byId("redo").onclick = () => stepHistory(redo, undo);
+    function modifySelected(update, version) {
+        try {
+            const next = update(project.Parts[selected]);
+            if (!next) return;
+            geometryEngine.buildPart(JSON.stringify(next));
+            changeParts(project.Parts.map((part, i) => i === selected ? next : part), selected, version);
+        } catch (error) { status.textContent = error.message; }
+    }
+    byId("hole").onclick = () => modifySelected(part => {
+        const answer = prompt("Hole center X, center Y, diameter in local millimeters", "0, 0, 5");
+        if (answer === null) return;
+        const [X, Y, Diameter, ...extra] = answer.split(",").map(Number);
+        if (extra.length || ![X,Y,Diameter].every(Number.isFinite) || Diameter <= 0)
+            throw new Error("Enter a center and a positive diameter.");
+        return { ...part, Holes: [...(part.Holes ?? []), { Axis: part.Kind === "Extrusion" ? "Profile" : "Z",
+            Center: { X,Y }, Diameter, Depth: 0, Through: true, FromEnd: true }] };
+    }, 10);
+    byId("bevel").onclick = () => modifySelected(part => {
+        const answer = prompt("Top edge bevel size (mm)", "2");
+        if (answer === null) return;
+        const Amount = Number(answer);
+        if (!Number.isFinite(Amount) || Amount <= 0) throw new Error("Enter a positive bevel size.");
+        const cuts = (part.BevelCuts ?? []).filter(cut => cut.Target.Z !== 1 || cut.Target.ProfileKind);
+        for (const [X,Y] of [[-1,0],[1,0],[0,-1],[0,1]])
+            cuts.push({ Target: { X,Y,Z:1 }, Amount });
+        return { ...part, Bevel: 0, BevelCuts: cuts };
+    }, 7);
     modeling.onchange = () => {
         const tool = modeling.value;
         modeling.value = "";
