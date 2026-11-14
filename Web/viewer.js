@@ -301,6 +301,8 @@ function startViewer() {
         byId("hole").disabled = !editor.hidden || !geometryEngine ||
             !["Box", "Cylinder", "Extrusion"].includes(part?.Kind);
         byId("bevel").disabled = !editor.hidden || !geometryEngine || part?.Kind !== "Box";
+        byId("thread").disabled = !editor.hidden || !geometryEngine ||
+            !(part?.Kind === "Cylinder" || part?.Kind === "Tube" || part?.Holes?.length || part?.Kind === "Extrusion");
         byId("remove-part").disabled = !editor.hidden || !part;
         byId("undo").disabled = !editor.hidden || !undo.length;
         byId("redo").disabled = !editor.hidden || !redo.length;
@@ -367,6 +369,19 @@ function startViewer() {
             cuts.push({ Target: { X,Y,Z:1 }, Amount });
         return { ...part, Bevel: 0, BevelCuts: cuts };
     }, 7);
+    byId("thread").onclick = () => modifySelected(part => {
+        const answer = prompt("Surface (−1 outer, −2 tube bore, 0 first hole), pitch, radial depth, length (mm)",
+            `${part.Holes?.length ? 0 : -1}, 1.5, 0.7, ${Math.min(part.Height, 10)}`);
+        if (answer === null) return;
+        const values = answer.split(",").map(Number);
+        const [Surface, Pitch, Depth, Length] = values;
+        if (values.length !== 4 || !Number.isInteger(Surface) ||
+            ![Pitch, Depth, Length].every(value => Number.isFinite(value) && value > 0))
+            throw new Error("Enter a surface number and positive thread dimensions.");
+        const Threads = (part.Threads ?? []).filter(thread => thread.Surface !== Surface);
+        Threads.push({ Surface, Pitch, Depth, Length, LeftHanded: false, FromEnd: true });
+        return { ...part, Threads };
+    }, 12);
     modeling.onchange = () => {
         const tool = modeling.value;
         modeling.value = "";
