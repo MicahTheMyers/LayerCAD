@@ -421,29 +421,15 @@ internal static class Geometry
         if (part.Kind == PartKind.Extrusion)
         {
             var points = part.Profile!;
-            if (!SketchGeometry.TryTriangulate(points, out var faces, out bool counterclockwise))
-                throw new ArgumentException("The sketch profile cannot be extruded.", nameof(part));
-
             if (!positioned)
             {
                 var bounds = part.LocalBounds();
                 offset = new Vector3D(-(bounds.X + bounds.SizeX / 2), -(bounds.Y + bounds.SizeY / 2), -bounds.Z);
             }
-            Point3D Vertex(int index, double height) =>
-                part.SketchVertex(points[index], height) + offset;
-
-            foreach (var (a, b, c) in faces)
-            {
-                Tri(Vertex(c, 0), Vertex(b, 0), Vertex(a, 0));
-                Tri(Vertex(a, part.Height), Vertex(b, part.Height), Vertex(c, part.Height));
-            }
-            for (int i = 0; i < points.Length; i++)
-            {
-                int next = (i + 1) % points.Length;
-                int a = counterclockwise ? i : next;
-                int b = counterclockwise ? next : i;
-                Quad(Vertex(a, 0), Vertex(b, 0), Vertex(b, part.Height), Vertex(a, part.Height));
-            }
+            Point3D Vertex(int index) =>
+                part.SketchVertex(points[index % points.Length], index < points.Length ? 0 : part.Height) + offset;
+            foreach (var (a, b, c) in ProfileExtrusion.Triangulate(points))
+                Tri(Vertex(a), Vertex(b), Vertex(c));
             return triangles;
         }
 

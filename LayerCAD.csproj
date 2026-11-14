@@ -12,6 +12,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="SketchGeometry.cs;LayerCAD.Core/**/*.cs"/>
+    <ProjectReference Include="LayerCAD.Core/LayerCAD.Core.csproj"/>
     <Resource Include="Assets\LayerCAD-mark.png;Assets\LayerCAD.ico" />
     <Content Include="Native\LayerCadManifold.dll" TargetPath="LayerCadManifold.dll"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
