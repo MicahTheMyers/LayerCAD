@@ -139,6 +139,101 @@ function startViewer() {
         zoom = Math.max(0.15, Math.min(20, zoom * factor));
         redraw();
     }
+    let model = [];
+    function upload(triangles) {
+    const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+    for (const triangle of triangles) for (const point of triangle) for (let i = 0; i < 3; i++) {
+        if (!Number.isFinite(point[i])) throw new Error("The model contains invalid coordinates.");
+        min[i] = Math.min(min[i], point[i]);
+        max[i] = Math.max(max[i], point[i]);
+    }
+    const center = min.map((value, i) => (value + max[i]) / 2);
+    const radius = Math.max(0.001, Math.hypot(...max.map((value, i) => value - center[i])));
+    const data = new Float32Array(triangles.length * 18);
+    let offset = 0;
+    for (const [a,b,c] of triangles) {
+        const x = b[0]-a[0], y = b[1]-a[1], z = b[2]-a[2];
+        const u = c[0]-a[0], v = c[1]-a[1], w = c[2]-a[2];
+        const normal = [y*w-z*v, z*u-x*w, x*v-y*u];
+        const length = Math.hypot(...normal) || 1;
+        for (const point of [a,b,c]) {
+            for (let i=0;i<3;i++) data[offset++] = (point[i]-center[i])/radius;
+            for (const component of normal) data[offset++] = component/length;
+        }
+    }
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    if (gl.getError() !== gl.NO_ERROR) throw new Error("The model exceeds available graphics memory.");
+    vertexCount = data.length / 6;
+        model = triangles;
+        document.querySelector("#export").disabled = false;
+    }
+    const editor = document.querySelector("#sketch");
+    const plane = document.querySelector("#sketch-plane");
+    const outline = document.querySelector("#outline");
+    const vertices = document.querySelector("#vertices");
+    const points = [];
+    const undoPoint = document.querySelector("#undo-point");
+    function drawSketch() {
+        outline.setAttribute("points", points.map(([x, y]) => [x + 110, 110 - y].join(",")).join(" "));
+        vertices.replaceChildren();
+        for (const [x, y] of points) {
+            const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            dot.setAttribute("cx", x + 110);
+            dot.setAttribute("cy", 110 - y);
+            dot.setAttribute("r", 1.4);
+            vertices.append(dot);
+        }
+        undoPoint.disabled = !points.length;
+    }
+    function showSketch(active) {
+        editor.hidden = !active;
+        canvas.hidden = active;
+        document.querySelector("#start-sketch").disabled = active;
+        document.querySelector("#fit").disabled = active;
+        if (!active) redraw();
+    }
+    document.querySelector("#start-sketch").addEventListener("click", () => {
+        ++loadSequence;
+        points.length = 0;
+        drawSketch();
+        showSketch(true);
+        status.textContent = "Tap the grid to place outline points. Extrude closes the outline.";
+    });
+    plane.addEventListener("pointerup", event => {
+        if (!event.isPrimary || event.button !== 0 || points.length >= 256) return;
+        const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(plane.getScreenCTM().inverse());
+        const x = Math.round(point.x), y = Math.round(point.y);
+        if (x < 0 || x > 220 || y < 0 || y > 220) return;
+        points.push([x - 110, 110 - y]);
+        drawSketch();
+    });
+    undoPoint.addEventListener("click", () => { points.pop(); drawSketch(); });
+    document.querySelector("#cancel-sketch").addEventListener("click", () => {
+        showSketch(false);
+        status.textContent = "Sketch canceled.";
+    });
+    document.querySelector("#extrude").addEventListener("click", () => {
+        try {
+            const height = document.querySelector("#height").valueAsNumber;
+            upload(extrudeProfile(points, height));
+            showSketch(false);
+            fit();
+            status.textContent = `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom`;
+        } catch (error) {
+            status.textContent = error.message;
+        }
+    });
+    document.querySelector("#export").addEventListener("click", () => {
+        if (!model.length) return;
+        const url = URL.createObjectURL(new Blob([binaryStl(model)], { type: "model/stl" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "LayerCAD-model.stl";
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    });
     document.querySelector("#fit").addEventListener("click", fit);
     document.querySelector("#file").addEventListener("change", async event => {
         const file = event.target.files[0];
@@ -154,29 +249,8 @@ function startViewer() {
                 : parseStl(await file.arrayBuffer());
             if (sequence !== loadSequence) return;
             if (!result.triangles.length) throw new Error("This project has no visible mesh bodies. Export an STL from LayerCAD to view its solid geometry.");
-            const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
-            for (const triangle of result.triangles) for (const point of triangle) for (let i = 0; i < 3; i++) {
-                if (!Number.isFinite(point[i])) throw new Error("The model contains invalid coordinates.");
-                min[i] = Math.min(min[i], point[i]);
-                max[i] = Math.max(max[i], point[i]);
-            }
-            const center = min.map((value, i) => (value + max[i]) / 2);
-            const radius = Math.max(0.001, Math.hypot(...max.map((value, i) => value - center[i])));
-            const data = new Float32Array(result.triangles.length * 18);
-            let offset = 0;
-            for (const [a,b,c] of result.triangles) {
-                const x = b[0]-a[0], y = b[1]-a[1], z = b[2]-a[2];
-                const u = c[0]-a[0], v = c[1]-a[1], w = c[2]-a[2];
-                const normal = [y*w-z*v, z*u-x*w, x*v-y*u];
-                const length = Math.hypot(...normal) || 1;
-                for (const point of [a,b,c]) {
-                    for (let i=0;i<3;i++) data[offset++] = (point[i]-center[i])/radius;
-                    for (const component of normal) data[offset++] = component/length;
-                }
-            }
-            gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
-            if (gl.getError() !== gl.NO_ERROR) throw new Error("The model exceeds available graphics memory.");
-            vertexCount = data.length / 6;
+            upload(result.triangles);
+            showSketch(false);
             status.textContent = `${file.name} · ${result.triangles.length.toLocaleString()} triangles · Drag to orbit · Pinch or scroll to zoom` +
                 (result.skipped ? ` · ${result.skipped} visible non-mesh items omitted` : "");
             fit();
