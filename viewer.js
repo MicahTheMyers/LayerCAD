@@ -228,14 +228,14 @@ function startViewer() {
     const byId = id => document.getElementById(id);
     const save = document.querySelector("#save");
     let booleanEngine;
-    import("./boolean.mjs?v=2").then(module => {
+    import("./boolean.mjs?v=3").then(module => {
         booleanEngine = module;
         refreshParts();
     }).catch(() => {
         status.textContent = "The solid boolean engine could not load.";
     });
     const modeling = byId("model-tool");
-    const engineReady = import("./engine/engine.js?v=constraints-1").then(engine => {
+    const engineReady = import("./engine/engine.js?v=modeling-2").then(engine => {
         geometryEngine = engine;
         modeling.disabled = !editor.hidden;
         refreshParts();
@@ -376,6 +376,66 @@ function startViewer() {
             return { X,Y,Z };
         };
         return mesh.map(([a,b,c]) => ({ A: point(a), B: point(reverse ? c : b), C: point(reverse ? b : c) }));
+    }
+    const meshVectors = triangles => triangles.map(({ A, B, C }) => [A, B, C].map(({ X,Y,Z }) => [X,Y,Z]));
+    function extrudeSketch(parts, sketchIndex, distance, operation) {
+        if (!["add", "cut", "merge"].includes(operation) || !Number.isFinite(distance) ||
+            Math.abs(distance) < 0.01 || Math.abs(distance) > 10000)
+            throw new Error("Choose Add, Cut, or Merge and a signed distance of 0.01–10,000 mm.");
+        const source = parts[sketchIndex];
+        const profiles = [source.Profile, ...(source.AdditionalProfiles ?? [])].filter(Boolean);
+        const link = source.SketchId ?? crypto.randomUUID();
+        const prisms = profiles.map((Profile, index) => {
+            const prism = { Kind: "Extrusion", Name: `Extrusion ${parts.length + index + 1}`,
+                X: source.X, Y: source.Y, Z: source.Z, Width: 0, Depth: 0, Height: Math.abs(distance),
+                Profile, SketchId: link, SketchProfileIndex: index, Plane: source.Plane, FaceFrame: source.FaceFrame };
+            if (distance > 0) return prism;
+            const [X,Y,Z] = modelPoint(source, [0,0,distance]);
+            return meshBody(prism.Name, transformMesh(solidMesh({ ...prism, X,Y,Z }), point => point));
+        });
+        if (operation === "add") {
+            parts[sketchIndex] = { ...source, SketchId: link, Hidden: !source.OpenPaths?.length };
+            return [...parts, ...prisms];
+        }
+        if (!booleanEngine) throw new Error("The solid modeling engine is still loading.");
+        const profilesToApply = prisms.map(solidMesh);
+        if (operation === "cut") {
+            let changed = false;
+            const result = parts.flatMap(part => {
+                if (part.Hidden || part.Kind === "Sketch") return [part];
+                let replacement = null;
+                for (const tool of profilesToApply) {
+                    if (replacement?.length === 0) break;
+                    const cut = booleanEngine.applyExtrusion(replacement ? meshVectors(replacement) : solidMesh(part), tool, "cut");
+                    if (cut !== null) replacement = cut;
+                }
+                if (replacement === null) return [part];
+                changed = true;
+                return replacement.length ? [meshBody(part.Name, replacement)] : [];
+            });
+            if (!changed) throw new Error("The extrusion does not cut any visible solid.");
+            return result;
+        }
+        const result = [...parts];
+        let merged = false;
+        for (const tool of profilesToApply) {
+            let vertices = tool, triangles = null, name = "Extrusion";
+            for (let i = 0; i < result.length; i++) {
+                const part = result[i];
+                if (part.Hidden || part.Kind === "Sketch") continue;
+                const joined = booleanEngine.applyExtrusion(solidMesh(part), vertices, "merge");
+                if (joined === null) continue;
+                name = triangles ? name : part.Name;
+                triangles = joined;
+                vertices = meshVectors(joined);
+                result.splice(i, 1);
+                i = -1;
+            }
+            if (triangles) merged = true;
+            result.push(meshBody(name, triangles ?? transformMesh(vertices, point => point)));
+        }
+        if (!merged) throw new Error("The extrusion does not join any visible solid.");
+        return result;
     }
     byId("mirror-body").onclick = () => {
         const answer = prompt("Mirror plane and position (mm): XY, XZ, or YZ", "YZ, 0");
@@ -544,6 +604,27 @@ function startViewer() {
                 const guide = project.Parts[selected];
                 if (guide?.Kind === "Sketch" && guide.OpenPaths?.length)
                     sources.push({ ...guide, Profile: null, AdditionalProfiles: null, Dimensions: null, Constraints: null });
+            } else if (tool === "Rib" || tool === "Web") {
+                const paths = project.Parts.flatMap(part => part.Hidden || part.Kind !== "Sketch" ? [] :
+                    (part.OpenPaths ?? []).map(path => ({ ...part, Profile: null, AdditionalProfiles: null,
+                        Constraints: null, Dimensions: null, OpenPaths: [path] })));
+                if (paths.length < (tool === "Web" ? 2 : 1)) throw new Error("Show the open sketch paths to reinforce.");
+                const answer = prompt(`Thickness and height (mm), then ${tool === "Web" ? "two or more path numbers" : "one path number"}\n` +
+                    paths.map((part, index) => `${index + 1}. ${part.Name}`).join("\n"),
+                    tool === "Web" ? "2, 8, 1, 2" : "2, 8, 1");
+                if (answer === null) return;
+                const [thickness, height, ...indices] = answer.split(",").map(Number);
+                if (!(thickness >= 0.01 && thickness <= 10000 && height >= 0.01 && height <= 10000) ||
+                    (tool === "Rib" ? indices.length !== 1 : indices.length < 2) ||
+                    new Set(indices).size !== indices.length || indices.some(i => !Number.isInteger(i) || !paths[i - 1]))
+                    throw new Error("Enter positive dimensions and the requested number of distinct paths.");
+                if (tool === "Web" && !booleanEngine) throw new Error("The solid modeling engine is still loading.");
+                const walls = indices.map(i => JSON.parse(geometryEngine.modelPart("Rib", JSON.stringify([paths[i - 1]]),
+                    thickness, height, 0, 0)));
+                const triangles = walls.reduce((wall, next) =>
+                    booleanEngine.combine(meshVectors(wall), meshVectors(next), "add"));
+                if (changeParts([...project.Parts, meshBody(tool, triangles)], project.Parts.length)) fit();
+                return;
             } else if (tool === "Sweep" || tool === "Pipe") {
                 const path = project.Parts[selected];
                 if (path?.Kind !== "Sketch" || !path.OpenPaths?.length)
@@ -624,17 +705,14 @@ function startViewer() {
         if (changeParts([...project.Parts, ...copies])) fit();
     };
     byId("extrude-part").onclick = () => {
-        const value = prompt("Extrusion distance (mm)", "10");
+        const value = prompt("Extrusion distance (mm) and operation (Add, Cut, or Merge)", "10, Add");
         if (value === null) return;
-        const source = project.Parts[selected];
-        const height = Number(value);
-        const link = source.SketchId ?? crypto.randomUUID();
-        const parts = [...project.Parts];
-        parts[selected] = { ...source, SketchId: link, Hidden: !source.AdditionalProfiles?.length && !source.OpenPaths?.length };
-        parts.push({ Kind: "Extrusion", Name: `Extrusion ${parts.length + 1}`, X: source.X, Y: source.Y, Z: source.Z,
-            Width: 0, Depth: 0, Height: height, Profile: source.Profile, SketchId: link,
-            Plane: source.Plane, FaceFrame: source.FaceFrame });
-        if (changeParts(parts, parts.length - 1)) fit();
+        try {
+            const [distance, operation = "add", ...extra] = value.toLowerCase().split(",").map(item => item.trim());
+            if (extra.length) throw new Error("Enter a distance and one operation.");
+            const parts = extrudeSketch([...project.Parts], selected, Number(distance), operation);
+            if (changeParts(parts, operation === "cut" ? parts.indexOf(project.Parts[selected]) : parts.length - 1)) fit();
+        } catch (error) { status.textContent = error.message; }
     };
     byId("move-part").onclick = () => {
         const part = project.Parts[selected];
@@ -880,7 +958,7 @@ function startViewer() {
                 i && point[0] === points[i-1][0] && point[1] === points[i-1][1])))
                 throw new Error("Finish an open path with at least two distinct consecutive points.");
             const profile = open ? points : shapeProfile(shape.value, points);
-            if (!open) extrudeProfile(profile, extrude ? height : 1);
+            if (!open) extrudeProfile(profile, 1);
             const plane = byId("plane-choice").value;
             const offset = byId("plane-offset").valueAsNumber;
             if (editing < 0 && (!Number.isFinite(offset) || Math.abs(offset) > 10000))
@@ -895,17 +973,17 @@ function startViewer() {
             const index = editing < 0 ? list.length : editing;
             list[index] = { ...position, Kind: "Sketch", Name: `Sketch ${index + 1}`, Height: 0,
                 ...previous, Profile: open ? null : outline, OpenPaths: open ? [outline] : previous?.OpenPaths,
-                SketchId: link, Hidden: extrude || previous?.Hidden || false, ReferenceImage: reference ?? undefined,
+                SketchId: link, Hidden: previous?.Hidden || false, ReferenceImage: reference ?? undefined,
                 Constraints: rules.length ? [rules] : undefined };
             if (previous?.SketchId) {
                 for (let i = 0; i < list.length; i++)
                     if (list[i].Kind === "Extrusion" && list[i].SketchId === link && !list[i].SketchProfileIndex)
                         list[i] = { ...list[i], Profile: outline };
             }
-            if (extrude) list.push({ ...position, X: list[index].X, Y: list[index].Y, Z: list[index].Z,
-                Plane: list[index].Plane, FaceFrame: list[index].FaceFrame, Kind: "Extrusion",
-                Name: `Extrusion ${list.length + 1}`, Height: height, Profile: outline, SketchId: link });
-            if (!changeParts(list, extrude ? list.length - 1 : index, reference ? 22 : rules.length ? 21 : open ? 17 : 11)) return;
+            const operation = byId("sketch-extrude-operation").value.toLowerCase();
+            const parts = extrude ? extrudeSketch(list, index, height, operation) : list;
+            if (!changeParts(parts, !extrude || operation === "cut" ? parts.indexOf(list[index]) : parts.length - 1,
+                reference ? 22 : rules.length ? 21 : open ? 17 : 11)) return;
             showSketch(false);
             fit();
             status.textContent = extrude ? `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom` : "Sketch saved.";

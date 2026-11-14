@@ -70,3 +70,31 @@ export function split(stock, axis, offset) {
         source?.delete();
     }
 }
+
+export function applyExtrusion(stock, tool, operation) {
+    if (operation !== "cut" && operation !== "merge") throw new Error("Choose Cut or Merge.");
+    let first, second, overlap, result;
+    const components = solid => {
+        const pieces = solid.decompose();
+        try { return pieces.length; }
+        finally { for (const piece of pieces) piece.delete(); }
+    };
+    try {
+        first = toSolid(stock);
+        second = toSolid(tool);
+        if (operation === "cut") {
+            overlap = first.intersect(second);
+            if (overlap.isEmpty() || overlap.volume() <= 0) return null;
+            result = first.subtract(second);
+        } else {
+            result = first.add(second);
+            if (components(result) >= components(first) + components(second)) return null;
+        }
+        return read(result);
+    } finally {
+        result?.delete();
+        overlap?.delete();
+        second?.delete();
+        first?.delete();
+    }
+}

@@ -21,6 +21,7 @@
   <select id="model-tool" aria-label="Modeling tool" disabled>
     <option value="">Create solid…</option><option>Sphere</option><option>Torus</option>
     <option>Coil</option><option>Revolve</option><option>Loft</option><option>Sweep</option><option>Pipe</option>
+    <option>Rib</option><option>Web</option>
   </select>
   <button id="pattern" type="button" disabled>Linear pattern</button>
   <button id="hole" type="button" disabled>Hole</button>
@@ -61,7 +62,8 @@
       <label>Shape <select id="shape"><option>Polygon</option><option>Rectangle</option><option>Circle</option><option>Open path</option></select></label>
       <label>Plane <select id="plane-choice"><option>XY</option><option>XZ</option><option>YZ</option></select></label>
       <label>Offset (mm) <input id="plane-offset" type="number" min="-10000" max="10000" step="any" value="0"></label>
-      <label>Height (mm) <input id="height" type="number" min="0.01" max="10000" step="any" value="10"></label>
+      <label>Distance (mm) <input id="height" type="number" min="-10000" max="10000" step="any" value="10"></label>
+      <label>Operation <select id="sketch-extrude-operation"><option>Add</option><option>Cut</option><option>Merge</option></select></label>
       <button id="undo-point" type="button">Undo point</button>
       <label>Vertex <select id="constraint-vertex" aria-label="Vertex for constraint"></select></label>
       <select id="constraint-rule" aria-label="Apply constraint" disabled>
@@ -78,5 +80,5 @@
   </div>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-14" defer></script>
+<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-15" defer></script>
 </html>
