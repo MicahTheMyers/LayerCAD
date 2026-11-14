@@ -105,7 +105,17 @@ The Windows x64 solid geometry library is built from [Manifold 3.5.4](https://gi
 ## Current scope
 
 The editor supports sketches on the three standard planes and planar faces, solid extrusions, and mesh-based extrusion cuts and merges. Sketch constraints, analytic curves, assemblies, and slicing are outside the current implementation.
-# Cross-platform viewer preview
+
+## Native app roadmap
+
+LayerCAD targets native editors on **macOS, iOS, and Android**, with the Windows editor as the feature baseline and `.layercad` as the shared project format.
+
+1. **Shared app foundation.** Extend the platform-independent geometry library and build a native viewport with mouse, trackpad, and touch controls.
+2. **First editing workflow on all three platforms.** Open and save projects, draw and edit sketches, extrude closed profiles, and import or export STL.
+3. **Windows feature parity.** Port the remaining modeling tools, selection and history behavior, and print preparation workflows. Verify that projects can move between platforms without losing their editable geometry.
+4. **Platform releases.** Package and test each native app on its target devices.
+
+## Cross-platform viewer preview
 
 The `Web/` folder contains a browser-based LayerCAD viewer intended for Android, iOS, and macOS. Serve the folder with a static web server and open its address in the device browser. It needs no backend and reads models locally on the device.
 
