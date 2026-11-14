@@ -261,6 +261,7 @@ public partial class SketchEditor
     private Vector3D cameraPan;
     private bool panDrag;
     private ViewportProjection sketchProjection;
+    private Rect3D referenceBounds = Rect3D.Empty;
 
     internal void SetReferences(Model3DGroup scene, Point3D origin, SketchFrame frame, Point3D[] corners,
                                 double viewSize, double distance)
@@ -272,6 +273,7 @@ public partial class SketchEditor
         sketchViewSize = viewSize;
         cameraDistance = distance;
         ReferenceScene.Content = scene;
+        referenceBounds = scene.Bounds;
         (orbitYaw, orbitPitch) = ViewportCamera.Angles(frame.Normal, frame.Vertical.Vector);
         Redraw();
     }
@@ -295,10 +297,13 @@ public partial class SketchEditor
     private void UpdateReferenceCamera()
     {
         ViewportCamera.Position(ReferenceCamera, referenceOrigin + cameraPan, orbitYaw, orbitPitch, cameraDistance);
-        ViewportCamera.FitDepth(ReferenceCamera, cameraDistance, ReferenceScene.Content?.Bounds ?? Rect3D.Empty);
+        ViewportCamera.FitDepth(ReferenceCamera, cameraDistance, referenceBounds,
+            ReferenceImageModel.Content?.Bounds ?? Rect3D.Empty);
         SketchViewCube.SetOrientation(-ReferenceCamera.LookDirection, ReferenceCamera.UpDirection);
         sketchProjection = new ViewportProjection(ReferenceCamera, Drawing.ActualWidth, Drawing.ActualHeight);
         scale = sketchProjection.PixelsPerUnit(referenceOrigin);
+        SketchOriginMarker.Data = sketchProjection.Project(referenceOrigin) is Point origin
+            ? new EllipseGeometry(origin, 4, 4) : null;
     }
 
     private void DragSketchCameraBy(Vector delta)
@@ -308,7 +313,7 @@ public partial class SketchEditor
         else
             (orbitYaw, orbitPitch) = ViewportCamera.Orbit(orbitYaw, orbitPitch, delta);
         bool dragging = orbitPoint is not null && orbitButton == MouseButton.Middle;
-        if (dragging)
+        if (dragging && !sketchCameraNavigating)
             UpdateMeasurements([], closed: false);
         RedrawSketch(navigating: dragging);
     }

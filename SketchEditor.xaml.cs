@@ -42,6 +42,7 @@ public partial class SketchEditor : UserControl
     private double orbitYaw, orbitPitch = Math.PI / 2;
     private readonly ViewportOrbitQueue orbitQueue;
     private bool validOutline;
+    private bool sketchCameraNavigating;
     private SketchPoint[][]? moveOriginal;
     private List<SketchPoint>[] moveProfiles = [];
     private bool loadingMove;
@@ -917,6 +918,7 @@ public partial class SketchEditor : UserControl
         if (width <= 0 || height <= 0)
             return;
 
+        sketchCameraNavigating = navigating;
         Drawing.Children.Clear();
         SketchEdgeHover.Data = null;
         snapMarker = null;
@@ -952,14 +954,16 @@ public partial class SketchEditor : UserControl
         SketchGridAxes.Stroke = axis;
         SketchGridAxes.Data = axes;
         DrawAlignmentReference(gridRadius);
-        foreach (var (edgeStart, edgeEnd) in faceGuide)
+        if (faceGuide.Length > 0)
         {
-            if (sketchProjection.Segment(WorldPoint(edgeStart), WorldPoint(edgeEnd)) is not { } segment)
-                continue;
-            var (a, b) = segment;
-            Drawing.Children.Add(new Line
+            var faceBoundary = new StreamGeometry();
+            using (var path = faceBoundary.Open())
+                foreach (var (start, end) in faceGuide)
+                    DrawProjectedLine(start, end, path);
+            faceBoundary.Freeze();
+            Drawing.Children.Add(new Path
             {
-                X1 = a.X, Y1 = a.Y, X2 = b.X, Y2 = b.Y, Stroke = axis, StrokeThickness = 2,
+                Data = faceBoundary, Stroke = axis, StrokeThickness = 2,
                 StrokeDashArray = [4, 3], IsHitTestVisible = false
             });
         }

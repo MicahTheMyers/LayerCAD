@@ -113,7 +113,7 @@ public partial class MainWindow : Window
         EndSurfaceSelection();
         if (selectedFace is { } face && ReferenceEquals(Selected, face.Surface.Part))
         {
-            StartFaceSketch(face.Surface, face.Origin);
+            StartFaceSketch(face.Surface);
             return;
         }
         choosingSketchSurface = true;
@@ -146,8 +146,9 @@ public partial class MainWindow : Window
         });
     }
 
-    private void StartFaceSketch(SketchSurface surface, Point3D origin)
+    private void StartFaceSketch(SketchSurface surface)
     {
+        var origin = surface.Center();
         if (!Part.ValidOffset(origin.X) || !Part.ValidOffset(origin.Y) || !Part.ValidOffset(origin.Z))
         {
             SetStatus("Choose a face location within ±10,000 mm of the build-plate origin.");
@@ -1464,7 +1465,7 @@ public partial class MainWindow : Window
             {
                 ShowSurfaceTooltip(point, hoveredFace is null ? "Choose a flat face" : $"Flat face on {part.Name}");
                 if (commit && hoveredFace is { } selected)
-                    StartFaceSketch(selected, partHit.PointHit);
+                    StartFaceSketch(selected);
             }
             return;
         }

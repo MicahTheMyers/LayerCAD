@@ -360,6 +360,7 @@
                     <Path x:Name="SketchGridLines"/>
                     <Path x:Name="SketchGridAxes"/>
                 </Canvas>
+                <Path x:Name="SketchOriginMarker" IsHitTestVisible="False" Fill="#C3E7FF" Stroke="#0A1422" StrokeThickness="1"/>
                 <Canvas x:Name="Drawing" Background="Transparent"
                         SizeChanged="RedrawOnResize" MouseWheel="ZoomSketch"
                         MouseMove="PreviewFromGrid" MouseLeave="ClearPreview" MouseDown="BeginOrbit"
