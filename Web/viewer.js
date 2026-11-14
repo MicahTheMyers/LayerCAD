@@ -39,6 +39,15 @@ function parseProject(project) {
     let skipped = 0;
     for (const part of project.Parts) {
         if (part.Hidden) continue;
+        if (part.Kind === "Extrusion" && (!part.Plane || part.Plane === "XY") && !part.FaceFrame &&
+            !part.Holes && !part.Threads && !part.Bevel && !part.BevelCuts && Array.isArray(part.Profile)) {
+            const extrude = typeof module === "undefined" ? extrudeProfile : require("./sketch.js").extrudeProfile;
+            const solid = extrude(part.Profile.map(({X,Y}) => [X,Y]), part.Height);
+            if (triangles.length + solid.length > triangleLimit) throw new Error("This project exceeds the viewer's triangle limit.");
+            for (const triangle of solid)
+                triangles.push(triangle.map(([x,y,z]) => [x+part.X,y+part.Y,z+part.Z]));
+            continue;
+        }
         if (!Array.isArray(part.Mesh?.Triangles)) {
             skipped++;
             continue;
@@ -140,6 +149,8 @@ function startViewer() {
         redraw();
     }
     let model = [];
+    let project = null;
+    const save = document.querySelector("#save");
     function upload(triangles) {
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (const triangle of triangles) for (const point of triangle) for (let i = 0; i < 3; i++) {
@@ -172,9 +183,11 @@ function startViewer() {
     const outline = document.querySelector("#outline");
     const vertices = document.querySelector("#vertices");
     const points = [];
+    const shape = document.querySelector("#shape");
     const undoPoint = document.querySelector("#undo-point");
     function drawSketch() {
-        outline.setAttribute("points", points.map(([x, y]) => [x + 110, 110 - y].join(",")).join(" "));
+        const profile = shape.value !== "Polygon" && points.length === 2 ? shapeProfile(shape.value, points) : points;
+        outline.setAttribute("points", profile.map(([x, y]) => [x + 110, 110 - y].join(",")).join(" "));
         vertices.replaceChildren();
         for (const [x, y] of points) {
             const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -197,13 +210,22 @@ function startViewer() {
         points.length = 0;
         drawSketch();
         showSketch(true);
-        status.textContent = "Tap the grid to place outline points. Extrude closes the outline.";
+        sketchHint();
     });
+    function sketchHint() {
+        status.textContent = {
+            Polygon: "Tap the outline points in order. Extrude closes the outline.",
+            Rectangle: "Tap two opposite corners of the rectangle.",
+            Circle: "Tap the center, then a point on the circle."
+        }[shape.value];
+    }
+    shape.addEventListener("change", () => { points.length = 0; drawSketch(); sketchHint(); });
     plane.addEventListener("pointerup", event => {
         if (!event.isPrimary || event.button !== 0 || points.length >= 256) return;
         const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(plane.getScreenCTM().inverse());
         const x = Math.round(point.x), y = Math.round(point.y);
         if (x < 0 || x > 220 || y < 0 || y > 220) return;
+        if (shape.value !== "Polygon" && points.length === 2) points.length = 0;
         points.push([x - 110, 110 - y]);
         drawSketch();
     });
@@ -215,7 +237,16 @@ function startViewer() {
     document.querySelector("#extrude").addEventListener("click", () => {
         try {
             const height = document.querySelector("#height").valueAsNumber;
-            upload(extrudeProfile(points, height));
+            const profile = shapeProfile(shape.value, points);
+            upload(extrudeProfile(profile, height));
+            const position = { X: 0, Y: 0, Z: 0, Width: 0, Depth: 0 };
+            project = { Version: 9, Bed: { X: 220, Y: 220, Z: 250 }, Parts: [
+                { ...position, Kind: "Sketch", Name: "Sketch 1", Height: 0, Hidden: true,
+                    Profile: profile.map(([X,Y]) => ({X,Y})) },
+                { ...position, Kind: "Extrusion", Name: "Extrusion 1", Height: height,
+                    Profile: profile.map(([X,Y]) => ({X,Y})) }
+            ] };
+            save.disabled = false;
             showSketch(false);
             fit();
             status.textContent = `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom`;
@@ -225,15 +256,21 @@ function startViewer() {
     });
     document.querySelector("#export").addEventListener("click", () => {
         if (!model.length) return;
-        const url = URL.createObjectURL(new Blob([binaryStl(model)], { type: "model/stl" }));
+        download(new Blob([binaryStl(model)], { type: "model/stl" }), "LayerCAD-model.stl");
+    });
+    save.addEventListener("click", () => {
+        if (project) download(new Blob([JSON.stringify(project)], { type: "application/json" }), "LayerCAD-model.layercad");
+    });
+    function download(blob, filename) {
+        const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = "LayerCAD-model.stl";
+        link.download = filename;
         document.body.append(link);
         link.click();
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
-    });
+    }
     document.querySelector("#fit").addEventListener("click", fit);
     document.querySelector("#file").addEventListener("change", async event => {
         const file = event.target.files[0];
@@ -244,12 +281,13 @@ function startViewer() {
             const projectFile = file.name.toLowerCase().endsWith(".layercad");
             const sizeLimit = projectFile ? 64 : 256;
             if (file.size > sizeLimit * 1024 * 1024) throw new Error(`Choose a file up to ${sizeLimit} MB.`);
-            const result = projectFile
-                ? parseProject(JSON.parse(await file.text()))
-                : parseStl(await file.arrayBuffer());
+            const opened = projectFile ? JSON.parse(await file.text()) : null;
+            const result = projectFile ? parseProject(opened) : parseStl(await file.arrayBuffer());
             if (sequence !== loadSequence) return;
             if (!result.triangles.length) throw new Error("This project has no visible mesh bodies. Export an STL from LayerCAD to view its solid geometry.");
             upload(result.triangles);
+            project = opened;
+            save.disabled = !project;
             showSketch(false);
             status.textContent = `${file.name} · ${result.triangles.length.toLocaleString()} triangles · Drag to orbit · Pinch or scroll to zoom` +
                 (result.skipped ? ` · ${result.skipped} visible non-mesh items omitted` : "");
