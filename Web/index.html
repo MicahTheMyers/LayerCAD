@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LayerCAD Web</title>
-<link rel="stylesheet" href="style.css?v=editor-4">
+<link rel="stylesheet" href="style.css?v=editor-5">
 <header>
   <h1>LayerCAD <span>Web</span></h1>
   <label class="open">Open model<input id="file" type="file" accept=".layercad,.stl"></label>
@@ -16,6 +16,8 @@
   <button id="start-sketch" type="button">New sketch</button>
   <button id="edit-sketch" type="button" disabled>Edit sketch</button>
   <button id="extrude-part" type="button" disabled>Extrude</button>
+  <button id="primitive" type="button">Primitives</button>
+  <button id="pattern" type="button" disabled>Linear pattern</button>
   <button id="move-part" type="button" disabled>Move</button>
   <button id="remove-part" type="button" disabled>Delete</button>
   <button id="undo" type="button" disabled>Undo</button>
@@ -36,6 +38,8 @@
     </svg>
     <div class="sketch-tools">
       <label>Shape <select id="shape"><option>Polygon</option><option>Rectangle</option><option>Circle</option></select></label>
+      <label>Plane <select id="plane-choice"><option>XY</option><option>XZ</option><option>YZ</option></select></label>
+      <label>Offset (mm) <input id="plane-offset" type="number" min="-10000" max="10000" step="any" value="0"></label>
       <label>Height (mm) <input id="height" type="number" min="0.01" max="10000" step="any" value="10"></label>
       <button id="undo-point" type="button">Undo point</button>
       <button id="extrude" type="button">Extrude</button>
@@ -47,5 +51,5 @@
   </div>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-4" defer></script>
+<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-5" defer></script>
 </html>

@@ -18,7 +18,7 @@ button:disabled { opacity: .5; cursor: default; }
 #outline { fill: #1769c433; stroke: #83cbff; stroke-width: .7; }
 #vertices { fill: #b8e6ff; }
 .sketch-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; }
-#height { width: 72px; font: inherit; padding: 6px; }
+#height, #plane-offset { width: 72px; font: inherit; padding: 6px; }
 nav { display: flex; align-items: center; gap: 6px; overflow-x: auto; padding: 6px; border: 1px solid #29415a; background: #101c2b; border-radius: 7px; }
 nav button, .mode { white-space: nowrap; }
 .mode { background: #123967; border: 1px solid #559fff; border-radius: 6px; padding: 5px 7px; font-size: 12px; }
