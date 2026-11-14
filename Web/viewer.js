@@ -486,6 +486,82 @@ function startViewer() {
     const points = [];
     const shape = document.querySelector("#shape");
     const undoPoint = document.querySelector("#undo-point");
+    const referenceOverlay = byId("reference-overlay");
+    let reference = null, referenceSequence = 0, calibration = null;
+
+    function drawReference() {
+        for (const id of ["reference-settings", "reference-calibrate", "reference-remove"])
+            byId(id).disabled = !reference;
+        if (!reference) {
+            referenceOverlay.removeAttribute("href");
+            return;
+        }
+        referenceOverlay.setAttribute("href", "data:image/png;base64," + reference.Png);
+        referenceOverlay.setAttribute("x", 110 + reference.X - reference.Width / 2);
+        referenceOverlay.setAttribute("y", 110 - reference.Y - reference.Height / 2);
+        referenceOverlay.setAttribute("width", reference.Width);
+        referenceOverlay.setAttribute("height", reference.Height);
+        referenceOverlay.setAttribute("opacity", reference.Opacity);
+    }
+
+    function updateReference(scale, x, y, opacity) {
+        const Width = reference.Width * scale, Height = reference.Height * scale;
+        if (![Width, Height].every(value => value >= 0.01 && value <= 10000) ||
+            ![x, y].every(value => Number.isFinite(value) && Math.abs(value) <= 10000) ||
+            !(opacity >= 0 && opacity <= 1)) {
+            status.textContent = "Enter a valid image size, position, and opacity.";
+            return false;
+        }
+        reference = { ...reference, Width, Height, X: x, Y: y, Opacity: opacity };
+        drawReference();
+        return true;
+    }
+
+    byId("reference-file").onchange = async event => {
+        const file = event.target.files[0];
+        event.target.value = "";
+        if (!file) return;
+        const sequence = ++referenceSequence;
+        const url = URL.createObjectURL(file);
+        try {
+            if (file.size > 32 * 1024 * 1024) throw new Error("Choose an image up to 32 MB.");
+            const image = new Image();
+            image.src = url;
+            await image.decode();
+            if (sequence !== referenceSequence || editor.hidden) return;
+            const bitmap = document.createElement("canvas");
+            const ratio = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
+            bitmap.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+            bitmap.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+            bitmap.getContext("2d").drawImage(image, 0, 0, bitmap.width, bitmap.height);
+            const span = Math.max(bitmap.width, bitmap.height);
+            reference = { Png: bitmap.toDataURL("image/png").split(",")[1],
+                Width: bitmap.width * 100 / span, Height: bitmap.height * 100 / span, X: 0, Y: 0, Opacity: 0.55 };
+            calibration = null;
+            drawReference();
+            status.textContent = "Image attached. Adjust its settings or calibrate from two points.";
+        } catch (error) {
+            if (sequence === referenceSequence) status.textContent = error.message || "Could not decode the image.";
+        } finally {
+            URL.revokeObjectURL(url);
+        }
+    };
+    byId("reference-settings").onclick = () => {
+        const answer = prompt("Image width, center X, center Y (mm), and opacity (%)",
+            [reference.Width, reference.X, reference.Y, reference.Opacity * 100].join(", "));
+        if (answer === null) return;
+        const [width, x, y, opacity] = answer.split(",").map(Number);
+        updateReference(width / reference.Width, x, y, opacity / 100);
+    };
+    byId("reference-calibrate").onclick = () => {
+        calibration = [];
+        status.textContent = "Tap two points on the image a known distance apart.";
+    };
+    byId("reference-remove").onclick = () => {
+        referenceSequence++;
+        reference = calibration = null;
+        drawReference();
+    };
     function drawSketch() {
         const fixedShape = shape.value === "Rectangle" || shape.value === "Circle";
         const profile = fixedShape && points.length === 2 ? shapeProfile(shape.value, points) : points;
@@ -501,6 +577,12 @@ function startViewer() {
         undoPoint.disabled = !points.length;
     }
     function showSketch(active) {
+        ++referenceSequence;
+        calibration = null;
+        if (active) {
+            reference = project.Parts[editing]?.ReferenceImage ?? null;
+            drawReference();
+        }
         editor.hidden = !active;
         canvas.hidden = active;
         document.querySelector("#start-sketch").disabled = active;
@@ -545,8 +627,31 @@ function startViewer() {
     }
     shape.addEventListener("change", () => { points.length = 0; drawSketch(); sketchHint(); });
     plane.addEventListener("pointerup", event => {
-        if (!event.isPrimary || event.button !== 0 || points.length >= 256) return;
+        if (!event.isPrimary || event.button !== 0) return;
         const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(plane.getScreenCTM().inverse());
+        if (calibration) {
+            const x = point.x - 110, y = 110 - point.y;
+            if (Math.abs(x - reference.X) > reference.Width / 2 || Math.abs(y - reference.Y) > reference.Height / 2) {
+                status.textContent = "Pick a point inside the reference image.";
+                return;
+            }
+            if (!calibration.length) {
+                calibration.push([x,y]);
+                status.textContent = "Tap the second calibration point.";
+                return;
+            }
+            const [[a,b]] = calibration;
+            const distance = Math.hypot(x-a, y-b);
+            if (distance < 0.01) return;
+            calibration = null;
+            const answer = prompt("Actual distance (mm)", distance.toFixed(2));
+            if (answer === null) { sketchHint(); return; }
+            const scale = Number(answer) / distance;
+            if (updateReference(scale, a + (reference.X-a)*scale, b + (reference.Y-b)*scale, reference.Opacity))
+                status.textContent = "Reference image calibrated.";
+            return;
+        }
+        if (points.length >= 256) return;
         const x = Math.round(point.x), y = Math.round(point.y);
         if (x < 0 || x > 220 || y < 0 || y > 220) return;
         if ((shape.value === "Rectangle" || shape.value === "Circle") && points.length === 2) points.length = 0;
@@ -582,7 +687,7 @@ function startViewer() {
             const index = editing < 0 ? list.length : editing;
             list[index] = { ...position, Kind: "Sketch", Name: `Sketch ${index + 1}`, Height: 0,
                 ...previous, Profile: open ? null : outline, OpenPaths: open ? [outline] : previous?.OpenPaths,
-                SketchId: link, Hidden: extrude || previous?.Hidden || false };
+                SketchId: link, Hidden: extrude || previous?.Hidden || false, ReferenceImage: reference ?? undefined };
             if (previous?.SketchId) {
                 for (let i = 0; i < list.length; i++)
                     if (list[i].Kind === "Extrusion" && list[i].SketchId === link && !list[i].SketchProfileIndex)
@@ -591,7 +696,7 @@ function startViewer() {
             if (extrude) list.push({ ...position, X: list[index].X, Y: list[index].Y, Z: list[index].Z,
                 Plane: list[index].Plane, FaceFrame: list[index].FaceFrame, Kind: "Extrusion",
                 Name: `Extrusion ${list.length + 1}`, Height: height, Profile: outline, SketchId: link });
-            if (!changeParts(list, extrude ? list.length - 1 : index, open ? 17 : 11)) return;
+            if (!changeParts(list, extrude ? list.length - 1 : index, reference ? 22 : open ? 17 : 11)) return;
             showSketch(false);
             fit();
             status.textContent = extrude ? `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom` : "Sketch saved.";
