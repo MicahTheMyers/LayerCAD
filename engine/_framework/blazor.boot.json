@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "LayerCAD.Browser.dll",
   "resources": {
-    "hash": "sha256-zdIJiyZWYbHZ1vehYdcNO3NtLipQqIR4RlxfehjyVGs=",
+    "hash": "sha256-4JNYjf1oYgxa5SWi6843eIFB3xSipartrfrS9Xilxhw=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-1DK+nm58uZjvv7U2c/UlUp1zFjeBZnqXHFHBX/W1igo="
     },
@@ -20,8 +20,8 @@
       "icudt_no_CJK.dat": "sha256-L7sV7NEYP37/Qr2FPCePo5cJqRgTXRwGHuwF5Q+0Nfs="
     },
     "assembly": {
-      "LayerCAD.Browser.wasm": "sha256-Aos8QvbDr6WsLGuQUyrUrhlMRsvvaRFZmhVIdciBwkU=",
-      "LayerCAD.Portable.wasm": "sha256-Xuix9SM+9fgkxIWVD6Hf7eL6EXX3xYVCzmOIDLmKA+o=",
+      "LayerCAD.Browser.wasm": "sha256-Y6ngd1VSZXfd6X9LfzO2euYSnDGHnwCtKZNRRFaJnHM=",
+      "LayerCAD.Portable.wasm": "sha256-oTsq2GXYOEE/VjeirVPka6r+tqHoOP9misMKwdTTXqs=",
       "LibTessDotNet.Double.wasm": "sha256-K8nUXOjSvzxb50XG1DcoXv6JP22pP7NaYiUXxwtDohQ=",
       "System.Collections.Concurrent.wasm": "sha256-HcdYOX2HX8RggT6jxpSY2gN5A8uxZv7CaiRSY9/+v9U=",
       "System.Collections.wasm": "sha256-BpWhOe13cd5Yzz5hrFffp5gIFhDbE5vZ51vVI1iunWk=",

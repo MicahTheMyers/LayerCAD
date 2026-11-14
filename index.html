@@ -56,6 +56,12 @@
       <label>Offset (mm) <input id="plane-offset" type="number" min="-10000" max="10000" step="any" value="0"></label>
       <label>Height (mm) <input id="height" type="number" min="0.01" max="10000" step="any" value="10"></label>
       <button id="undo-point" type="button">Undo point</button>
+      <label>Vertex <select id="constraint-vertex" aria-label="Vertex for constraint"></select></label>
+      <select id="constraint-rule" aria-label="Apply constraint" disabled>
+        <option value="">Constrain…</option><option value="0">Horizontal edge</option>
+        <option value="1">Vertical edge</option><option value="2">Coincident with origin</option>
+        <option value="clear">Clear constraints</option>
+      </select>
       <button id="extrude" type="button">Extrude</button>
       <button id="finish-sketch" type="button">Finish sketch</button>
       <button id="cancel-sketch" type="button">Cancel</button>
@@ -65,5 +71,5 @@
   </div>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-9" defer></script>
+<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-10" defer></script>
 </html>

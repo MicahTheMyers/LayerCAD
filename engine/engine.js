@@ -5,3 +5,4 @@ const exports = await runtime.getAssemblyExports(runtime.getConfig().mainAssembl
 export const buildPart = exports.LayerCAD.BrowserGeometry.BuildPart;
 export const modelPart = exports.LayerCAD.BrowserGeometry.Model;
 export const pickFace = exports.LayerCAD.BrowserGeometry.PickFace;
+export const constrain = exports.LayerCAD.BrowserGeometry.Constrain;
