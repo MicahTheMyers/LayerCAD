@@ -789,7 +789,7 @@ public partial class SketchEditor : UserControl
             {
                 var draft = points.ToArray();
                 draft[index] = point;
-                var solved = SolveConstraints(draft, rules, index);
+                var solved = SketchConstraintSolver.Solve(draft, rules, index);
                 if (!ValidConstrainedOutline(solved))
                 {
                     Feedback.Text = "That edit would make the constrained drawing invalid.";

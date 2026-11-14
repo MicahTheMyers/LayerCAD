@@ -37,7 +37,7 @@ public partial class SketchEditor
         }
         ProfileConstraint[] next = [..constraints.GetValueOrDefault(points) ?? [], new(kind, vertex)];
         next = next.Distinct().ToArray();
-        var outline = SolveConstraints(points, next, vertex);
+        var outline = SketchConstraintSolver.Solve(points, next, vertex);
         if (!ValidConstrainedOutline(outline))
         {
             Feedback.Text = "That constraint would make the drawing invalid.";
@@ -64,35 +64,4 @@ public partial class SketchEditor
         ? SketchGeometry.ValidOpenPath(outline)
         : SketchGeometry.TryTriangulate(outline, out _, out _);
 
-    private static SketchPoint[] SolveConstraints(IReadOnlyList<SketchPoint> outline, ProfileConstraint[] rules, int preferred)
-    {
-        var x = Enumerable.Range(0, outline.Count).ToArray();
-        var y = (int[])x.Clone();
-        foreach (var rule in rules)
-        {
-            int next = (rule.Vertex + 1) % outline.Count;
-            if (rule.Kind == ProfileConstraintKind.Vertical)
-                x[Root(x, next)] = Root(x, rule.Vertex);
-            if (rule.Kind == ProfileConstraintKind.Horizontal)
-                y[Root(y, next)] = Root(y, rule.Vertex);
-        }
-        var origin = rules.Where(rule => rule.Kind == ProfileConstraintKind.CoincidentOrigin).Select(rule => rule.Vertex).ToArray();
-        return Enumerable.Range(0, outline.Count).Select(i => new SketchPoint(
-            Value(x, i, p => p.X), Value(y, i, p => p.Y))).ToArray();
-
-        double Value(int[] groups, int index, Func<SketchPoint, double> coordinate)
-        {
-            int group = Root(groups, index);
-            if (origin.Any(vertex => Root(groups, vertex) == group))
-                return 0;
-            return coordinate(outline[Root(groups, preferred) == group ? preferred : group]);
-        }
-
-        static int Root(int[] parents, int index)
-        {
-            while (parents[index] != index)
-                index = parents[index];
-            return index;
-        }
-    }
 }

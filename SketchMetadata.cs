@@ -26,3 +26,38 @@ public sealed record SketchReferenceImage(byte[] Png, double Width, double Heigh
         Part.ValidDimension(Width) && Part.ValidDimension(Height) &&
         Part.ValidOffset(X) && Part.ValidOffset(Y) && Opacity is >= 0 and <= 1;
 }
+
+internal static class SketchConstraintSolver
+{
+    internal static SketchPoint[] Solve(IReadOnlyList<SketchPoint> outline, ProfileConstraint[] rules, int preferred)
+    {
+        var x = Enumerable.Range(0, outline.Count).ToArray();
+        var y = (int[])x.Clone();
+        foreach (var rule in rules)
+        {
+            int next = (rule.Vertex + 1) % outline.Count;
+            if (rule.Kind == ProfileConstraintKind.Vertical)
+                x[Root(x, next)] = Root(x, rule.Vertex);
+            if (rule.Kind == ProfileConstraintKind.Horizontal)
+                y[Root(y, next)] = Root(y, rule.Vertex);
+        }
+        var origin = rules.Where(rule => rule.Kind == ProfileConstraintKind.CoincidentOrigin).Select(rule => rule.Vertex).ToArray();
+        return Enumerable.Range(0, outline.Count).Select(i => new SketchPoint(
+            Value(x, i, p => p.X), Value(y, i, p => p.Y))).ToArray();
+
+        double Value(int[] groups, int index, Func<SketchPoint, double> coordinate)
+        {
+            int group = Root(groups, index);
+            if (origin.Any(vertex => Root(groups, vertex) == group))
+                return 0;
+            return coordinate(outline[Root(groups, preferred) == group ? preferred : group]);
+        }
+
+        static int Root(int[] parents, int index)
+        {
+            while (parents[index] != index)
+                index = parents[index];
+            return index;
+        }
+    }
+}

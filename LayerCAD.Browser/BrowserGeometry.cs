@@ -39,6 +39,20 @@ public static partial class BrowserGeometry
     }
 
     [JSExport]
+    public static string Constrain(string json)
+    {
+        var request = JsonSerializer.Deserialize(json, BrowserJson.Default.ConstraintRequest);
+        if (request is null || request.Points.Length is < 3 or > SketchGeometry.MaxVertices ||
+            (uint)request.Preferred >= request.Points.Length ||
+            request.Rules.Any(rule => (uint)rule.Vertex >= request.Points.Length || !Enum.IsDefined(rule.Kind)))
+            throw new ArgumentException("Select a valid sketch vertex.");
+        var solved = SketchConstraintSolver.Solve(request.Points, request.Rules, request.Preferred);
+        if (!SketchGeometry.TryTriangulate(solved, out _, out _))
+            throw new ArgumentException("That constraint would make the profile invalid.");
+        return JsonSerializer.Serialize(solved, BrowserJson.Default.SketchPointArray);
+    }
+
+    [JSExport]
     public static string Model(string tool, string json, double a, double b, double c, double d)
     {
         var parts = JsonSerializer.Deserialize(json, BrowserJson.Default.PartArray) ?? [];
@@ -71,7 +85,10 @@ public static partial class BrowserGeometry
 [JsonSerializable(typeof(List<Triangle>))]
 [JsonSerializable(typeof(FacePickRequest))]
 [JsonSerializable(typeof(FacePickResult))]
+[JsonSerializable(typeof(ConstraintRequest))]
+[JsonSerializable(typeof(SketchPoint[]))]
 internal partial class BrowserJson : JsonSerializerContext;
 
 internal sealed record FacePickRequest(Part Part, Point3D Origin, Vector3D Direction);
 internal sealed record FacePickResult(Point3D Center, SketchFrame Frame, SketchPoint[][] Guide, double Distance);
+internal sealed record ConstraintRequest(SketchPoint[] Points, ProfileConstraint[] Rules, int Preferred);

@@ -228,7 +228,7 @@ function startViewer() {
     const byId = id => document.getElementById(id);
     const save = document.querySelector("#save");
     const modeling = byId("model-tool");
-    const engineReady = import("./engine/engine.js?v=face-1").then(engine => {
+    const engineReady = import("./engine/engine.js?v=constraints-1").then(engine => {
         geometryEngine = engine;
         modeling.disabled = !editor.hidden;
         refreshParts();
@@ -292,7 +292,7 @@ function startViewer() {
         }
         const part = project.Parts[selected];
         byId("edit-sketch").disabled = !editor.hidden || part?.Kind !== "Sketch" || !Array.isArray(part.Profile) ||
-            !!part.Dimensions || !!part.Constraints;
+            !!part.Dimensions || !!part.AdditionalProfiles || !!part.OpenPaths;
         byId("extrude-part").disabled = !editor.hidden || part?.Kind !== "Sketch" || !part.Profile;
         byId("move-part").disabled = !editor.hidden || !part;
         byId("face-sketch").disabled = !editor.hidden || !geometryEngine || !model.length;
@@ -490,6 +490,27 @@ function startViewer() {
     const outline = document.querySelector("#outline");
     const vertices = document.querySelector("#vertices");
     const points = [];
+    let rules = [];
+    const rulePicker = byId("constraint-rule");
+    const vertexPicker = byId("constraint-vertex");
+    rulePicker.onchange = () => {
+        const rule = rulePicker.value;
+        rulePicker.value = "";
+        if (!rule) return;
+        if (rule === "clear") { rules = []; drawSketch(); return; }
+        const Vertex = Number(vertexPicker.value), Kind = Number(rule);
+        if (rules.some(item => item.Vertex === Vertex && item.Kind === Kind)) return;
+        try {
+            const next = [...rules, { Vertex, Kind }];
+            const solved = JSON.parse(geometryEngine.constrain(JSON.stringify({
+                Points: points.map(([X,Y]) => ({ X,Y })), Rules: next, Preferred: Vertex
+            })));
+            points.splice(0, points.length, ...solved.map(({X,Y}) => [X,Y]));
+            rules = next;
+            drawSketch();
+            status.textContent = "Constraint applied. Clear constraints to change the outline.";
+        } catch (error) { status.textContent = error.message; }
+    };
     const shape = document.querySelector("#shape");
     const undoPoint = document.querySelector("#undo-point");
     const referenceOverlay = byId("reference-overlay");
@@ -580,7 +601,12 @@ function startViewer() {
             dot.setAttribute("r", 1.4);
             vertices.append(dot);
         }
-        undoPoint.disabled = !points.length;
+        undoPoint.disabled = !points.length || !!rules.length;
+        shape.disabled = !!rules.length;
+        const vertex = vertexPicker.value;
+        vertexPicker.replaceChildren(...points.map((_, i) => new Option(String(i + 1), String(i))));
+        if (vertex && Number(vertex) < points.length) vertexPicker.value = vertex;
+        rulePicker.disabled = !geometryEngine || shape.value !== "Polygon" || points.length < 3;
     }
     function showSketch(active) {
         ++referenceSequence;
@@ -605,6 +631,8 @@ function startViewer() {
     document.querySelector("#start-sketch").addEventListener("click", () => {
         ++loadSequence;
         editing = -1;
+        rules = [];
+        shape.value = "Polygon";
         faceSketch = null;
         pickingFace = false;
         byId("plane-choice").disabled = byId("plane-offset").disabled = false;
@@ -621,6 +649,7 @@ function startViewer() {
         faceSketch = null;
         pickingFace = false;
         const part = project.Parts[selected];
+        rules = part.Constraints?.[0] ?? [];
         byId("plane-choice").value = part.Plane ?? "XY";
         byId("plane-offset").value = part.Plane === "XZ" ? -part.Y : part.Plane === "YZ" ? part.X : part.Z;
         byId("plane-choice").disabled = byId("plane-offset").disabled = true;
@@ -664,7 +693,7 @@ function startViewer() {
                 status.textContent = "Reference image calibrated.";
             return;
         }
-        if (points.length >= 256) return;
+        if (points.length >= 256 || rules.length) return;
         const x = Math.round(point.x), y = Math.round(point.y);
         if (x < 0 || x > 220 || y < 0 || y > 220) return;
         if ((shape.value === "Rectangle" || shape.value === "Circle") && points.length === 2) points.length = 0;
@@ -701,7 +730,8 @@ function startViewer() {
             const index = editing < 0 ? list.length : editing;
             list[index] = { ...position, Kind: "Sketch", Name: `Sketch ${index + 1}`, Height: 0,
                 ...previous, Profile: open ? null : outline, OpenPaths: open ? [outline] : previous?.OpenPaths,
-                SketchId: link, Hidden: extrude || previous?.Hidden || false, ReferenceImage: reference ?? undefined };
+                SketchId: link, Hidden: extrude || previous?.Hidden || false, ReferenceImage: reference ?? undefined,
+                Constraints: rules.length ? [rules] : undefined };
             if (previous?.SketchId) {
                 for (let i = 0; i < list.length; i++)
                     if (list[i].Kind === "Extrusion" && list[i].SketchId === link && !list[i].SketchProfileIndex)
@@ -710,7 +740,7 @@ function startViewer() {
             if (extrude) list.push({ ...position, X: list[index].X, Y: list[index].Y, Z: list[index].Z,
                 Plane: list[index].Plane, FaceFrame: list[index].FaceFrame, Kind: "Extrusion",
                 Name: `Extrusion ${list.length + 1}`, Height: height, Profile: outline, SketchId: link });
-            if (!changeParts(list, extrude ? list.length - 1 : index, reference ? 22 : open ? 17 : 11)) return;
+            if (!changeParts(list, extrude ? list.length - 1 : index, reference ? 22 : rules.length ? 21 : open ? 17 : 11)) return;
             showSketch(false);
             fit();
             status.textContent = extrude ? `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom` : "Sketch saved.";
