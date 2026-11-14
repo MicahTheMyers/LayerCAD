@@ -183,6 +183,7 @@ function startViewer() {
     const tint = gl.getUniformLocation(program, "tint");
     let solidVertexCount = 0;
     const pointers = new Map();
+    let tapStart = null;
     let vertexCount = 0, yaw = -0.6, pitch = 0.5, zoom = 1, pending = false, loadSequence = 0;
 
     function draw() {
@@ -220,13 +221,14 @@ function startViewer() {
         redraw();
     }
     let model = [];
+    let modelCenter = [0,0,0], modelRadius = 1, faceSketch = null, pickingFace = false;
     const emptyProject = () => ({ Version: 11, Bed: { X: 220, Y: 220, Z: 250 }, Parts: [] });
     let project = emptyProject(), selected = -1, editing = -1;
     const undo = [], redo = [];
     const byId = id => document.getElementById(id);
     const save = document.querySelector("#save");
     const modeling = byId("model-tool");
-    const engineReady = import("./engine/engine.js").then(engine => {
+    const engineReady = import("./engine/engine.js?v=face-1").then(engine => {
         geometryEngine = engine;
         modeling.disabled = !editor.hidden;
         refreshParts();
@@ -259,6 +261,8 @@ function startViewer() {
     if (gl.getError() !== gl.NO_ERROR) throw new Error("The model exceeds available graphics memory.");
     vertexCount = data.length / 6;
         solidVertexCount = solids.length * 3;
+        modelCenter = triangles.length ? center : [0,0,0];
+        modelRadius = triangles.length ? radius : 1;
         model = solids;
         document.querySelector("#export").disabled = !solids.length;
     }
@@ -291,6 +295,8 @@ function startViewer() {
             !!part.Dimensions || !!part.Constraints;
         byId("extrude-part").disabled = !editor.hidden || part?.Kind !== "Sketch" || !part.Profile;
         byId("move-part").disabled = !editor.hidden || !part;
+        byId("face-sketch").disabled = !editor.hidden || !geometryEngine || !model.length;
+        byId("face-sketch").setAttribute("aria-pressed", pickingFace);
         byId("pattern").disabled = !editor.hidden || !part || part.Kind === "Sketch";
         byId("hole").disabled = !editor.hidden || !geometryEngine ||
             !["Box", "Cylinder", "Extrusion"].includes(part?.Kind);
@@ -582,6 +588,9 @@ function startViewer() {
         if (active) {
             reference = project.Parts[editing]?.ReferenceImage ?? null;
             drawReference();
+            const guide = faceSketch?.Guide ?? [];
+            byId("face-guide").setAttribute("d", guide.map(([a,b]) =>
+                `M ${110+a.X} ${110-a.Y} L ${110+b.X} ${110-b.Y}`).join(" "));
         }
         editor.hidden = !active;
         canvas.hidden = active;
@@ -596,6 +605,8 @@ function startViewer() {
     document.querySelector("#start-sketch").addEventListener("click", () => {
         ++loadSequence;
         editing = -1;
+        faceSketch = null;
+        pickingFace = false;
         byId("plane-choice").disabled = byId("plane-offset").disabled = false;
         byId("plane-choice").value = "XY";
         byId("plane-offset").value = 0;
@@ -607,6 +618,8 @@ function startViewer() {
     byId("edit-sketch").onclick = () => {
         ++loadSequence;
         editing = selected;
+        faceSketch = null;
+        pickingFace = false;
         const part = project.Parts[selected];
         byId("plane-choice").value = part.Plane ?? "XY";
         byId("plane-offset").value = part.Plane === "XZ" ? -part.Y : part.Plane === "YZ" ? part.X : part.Z;
@@ -680,6 +693,7 @@ function startViewer() {
                 throw new Error("Enter a plane offset between −10,000 and 10,000 mm.");
             const [X,Y,Z] = editing < 0 ? modelPoint({ Plane: plane, X: 0, Y: 0, Z: 0 }, [0,0,offset]) : [0,0,0];
             const position = { X, Y, Z, Plane: plane, Width: 0, Depth: 0 };
+            if (faceSketch) Object.assign(position, faceSketch.Center, { FaceFrame: faceSketch.Frame });
             const outline = profile.map(([X,Y]) => ({X,Y}));
             const list = [...project.Parts];
             const previous = list[editing];
@@ -744,6 +758,7 @@ function startViewer() {
                 }) } }] };
             selected = -1;
             undo.length = redo.length = 0;
+            pickingFace = false;
             showSketch(false);
             status.textContent = `${file.name} · ${result.triangles.length.toLocaleString()} triangles · Drag to orbit · Pinch or scroll to zoom` +
                 (result.skipped ? ` · ${result.skipped} visible non-mesh items omitted` : "");
@@ -755,12 +770,49 @@ function startViewer() {
     canvas.addEventListener("pointerdown", event => {
         canvas.setPointerCapture(event.pointerId);
         pointers.set(event.pointerId, [event.clientX, event.clientY]);
+        tapStart = pointers.size === 1 && event.button === 0 ? [event.clientX, event.clientY] : null;
+    });
+    byId("face-sketch").onclick = () => {
+        pickingFace = !pickingFace;
+        refreshParts();
+        status.textContent = pickingFace ? "Click or tap a planar face to start a sketch." : "Face selection canceled.";
+    };
+    canvas.addEventListener("click", event => {
+        if (!pickingFace || !tapStart || Math.hypot(event.clientX-tapStart[0], event.clientY-tapStart[1]) > 5) return;
+        tapStart = null;
+        try {
+            const bounds = canvas.getBoundingClientRect();
+            const fit = Math.min(bounds.width, bounds.height) * 0.84 * zoom;
+            const x = (2 * (event.clientX - bounds.left) - bounds.width) / fit;
+            const y = (bounds.height - 2 * (event.clientY - bounds.top)) / fit;
+            const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+            const direction = [sy * cp, cy * cp, -sp];
+            const origin = modelCenter.map((value, i) => value + modelRadius *
+                ([cy * x + sy * sp * y, -sy * x + cy * sp * y, cp * y][i] - 2 * direction[i]));
+            const vector = ([X,Y,Z]) => ({ X,Y,Z });
+            let face = null;
+            for (const part of project.Parts) {
+                if (part.Hidden || part.Kind === "Sketch") continue;
+                const hit = JSON.parse(geometryEngine.pickFace(JSON.stringify({
+                    Part: part, Origin: vector(origin), Direction: vector(direction)
+                })));
+                if (hit && (!face || hit.Distance < face.Distance)) face = hit;
+            }
+            if (!face) { status.textContent = "Choose a visible planar face."; return; }
+            pickingFace = false;
+            byId("start-sketch").click();
+            faceSketch = face;
+            byId("plane-choice").disabled = byId("plane-offset").disabled = true;
+            showSketch(true);
+            status.textContent = "Sketch origin is at the face center.";
+        } catch (error) { status.textContent = error.message; }
     });
     canvas.addEventListener("pointermove", event => {
         const old = pointers.get(event.pointerId);
         if (!old) return;
         const next = [event.clientX, event.clientY];
         pointers.set(event.pointerId, next);
+        if (tapStart && Math.hypot(next[0]-tapStart[0], next[1]-tapStart[1]) > 5) tapStart = null;
         if (pointers.size === 1) {
             yaw += (next[0] - old[0]) * 0.012;
             pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + (next[1] - old[1]) * 0.012));

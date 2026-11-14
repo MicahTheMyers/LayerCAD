@@ -15,6 +15,7 @@
   <span class="mode" id="mode">Build Mode</span>
   <button id="start-sketch" type="button">New sketch</button>
   <button id="edit-sketch" type="button" disabled>Edit sketch</button>
+  <button id="face-sketch" type="button" disabled>Sketch on face</button>
   <button id="extrude-part" type="button" disabled>Extrude</button>
   <button id="primitive" type="button">Primitives</button>
   <select id="model-tool" aria-label="Modeling tool" disabled>
@@ -40,6 +41,8 @@
       <rect width="220" height="220" fill="url(#grid)"/>
       <image id="reference-overlay" preserveAspectRatio="none" pointer-events="none"/>
       <path d="M110 0 V220 M0 110 H220" stroke="#4e7591" stroke-width=".5"/>
+      <path id="face-guide" fill="none" stroke="#9eb7d1" stroke-width=".6" stroke-dasharray="2 1"/>
+      <circle cx="110" cy="110" r="1.3" fill="#c3e7ff"/>
       <polygon id="outline"/>
       <g id="vertices"></g>
     </svg>
@@ -62,5 +65,5 @@
   </div>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-8" defer></script>
+<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-9" defer></script>
 </html>
