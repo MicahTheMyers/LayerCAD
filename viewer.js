@@ -53,10 +53,12 @@ function parseProject(project) {
     if (!Array.isArray(project.Parts)) throw new Error("Invalid LayerCAD project.");
     const triangles = [];
     const sketchTriangles = [];
+    const starts = [];
     const extrude = typeof module === "undefined" ? extrudeProfile : require("./sketch.js").extrudeProfile;
     const makeShape = typeof module === "undefined" ? shapeProfile : require("./sketch.js").shapeProfile;
     let skipped = 0;
     for (const part of project.Parts) {
+        starts.push([triangles.length, sketchTriangles.length]);
         if (part.Hidden) continue;
         if (["Box", "Cylinder", "Tube"].includes(part.Kind) && !part.Holes && !part.Threads && !part.Bevel && !part.BevelCuts) {
             const count = 96;
@@ -123,7 +125,12 @@ function parseProject(project) {
                 [point.X + part.X, point.Y + part.Y, point.Z + part.Z]));
         }
     }
-    return { triangles, sketchTriangles, skipped };
+    const ranges = starts.map(([solid, sketch], i) => {
+        const [nextSolid, nextSketch] = starts[i + 1] ?? [triangles.length, sketchTriangles.length];
+        return solid < nextSolid ? [solid, nextSolid] :
+            [triangles.length + sketch, triangles.length + nextSketch];
+    });
+    return { triangles, sketchTriangles, ranges, skipped };
 }
 
 if (typeof module !== "undefined") module.exports = { parseStl, parseProject };
@@ -182,6 +189,7 @@ function startViewer() {
     const angles = gl.getUniformLocation(program, "angles"), scale = gl.getUniformLocation(program, "scale");
     const tint = gl.getUniformLocation(program, "tint");
     let solidVertexCount = 0;
+    let sceneTriangles = [], partRanges = [];
     const pointers = new Map();
     let tapStart = null;
     let vertexCount = 0, yaw = -0.6, pitch = 0.5, zoom = 1, pending = false, loadSequence = 0;
@@ -199,10 +207,21 @@ function startViewer() {
         const fit = Math.min(width, height) * 0.84 * zoom;
         gl.uniform4f(angles, Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch));
         gl.uniform3f(scale, fit / width, fit / height, 0.9);
-        gl.uniform3f(tint, 0.76, 0.84, 0.94);
-        gl.drawArrays(gl.TRIANGLES, 0, solidVertexCount);
-        gl.uniform3f(tint, 0.29, 0.85, 0.72);
-        gl.drawArrays(gl.TRIANGLES, solidVertexCount, vertexCount - solidVertexCount);
+        const [start, end] = (partRanges[selected] ?? [0, 0]).map(index => index * 3);
+        function drawRange(first, last, color) {
+            gl.uniform3f(tint, ...color);
+            gl.drawArrays(gl.TRIANGLES, first, last - first);
+        }
+        for (const [first, last, color] of [
+            [0, solidVertexCount, [0.76, 0.84, 0.94]],
+            [solidVertexCount, vertexCount, [0.29, 0.85, 0.72]]
+        ]) {
+            const from = Math.min(last, Math.max(first, start));
+            const to = Math.min(last, Math.max(first, end));
+            drawRange(first, from, color);
+            if (from < to) drawRange(from, to, [1, 0.75, 0.53]);
+            drawRange(to, last, color);
+        }
     }
     function redraw() {
         if (!pending) {
@@ -242,7 +261,7 @@ function startViewer() {
     }).catch(() => {
         status.textContent = "The advanced geometry engine could not load. Basic editing is available.";
     });
-    function upload(solids, sketches = []) {
+    function upload(solids, sketches = [], ranges = [[0, solids.length]]) {
     const triangles = solids.concat(sketches);
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (const triangle of triangles) for (const point of triangle) for (let i = 0; i < 3; i++) {
@@ -267,6 +286,8 @@ function startViewer() {
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     if (gl.getError() !== gl.NO_ERROR) throw new Error("The model exceeds available graphics memory.");
     vertexCount = data.length / 6;
+        sceneTriangles = triangles;
+        partRanges = ranges;
         solidVertexCount = solids.length * 3;
         modelCenter = triangles.length ? center : [0,0,0];
         modelRadius = triangles.length ? radius : 1;
@@ -274,6 +295,7 @@ function startViewer() {
         document.querySelector("#export").disabled = !solids.length;
     }
     function refreshParts() {
+        redraw();
         const panel = byId("parts");
         panel.replaceChildren();
         for (const [title, sketches] of [["Objects", false], ["Sketches", true]]) {
@@ -325,7 +347,7 @@ function startViewer() {
     }
     function loadScene(next) {
         const result = parseProject(next);
-        upload(result.triangles, result.sketchTriangles);
+        upload(result.triangles, result.sketchTriangles, result.ranges);
         project = next;
         refreshParts();
         redraw();
@@ -731,8 +753,10 @@ function startViewer() {
     const editor = document.querySelector("#sketch");
     const plane = document.querySelector("#sketch-plane");
     const outline = document.querySelector("#outline");
+    const preview = byId("sketch-preview");
     const vertices = document.querySelector("#vertices");
     const points = [];
+    const redoPoints = [];
     let rules = [];
     const rulePicker = byId("constraint-rule");
     const vertexPicker = byId("constraint-vertex");
@@ -749,6 +773,7 @@ function startViewer() {
                 Points: points.map(([X,Y]) => ({ X,Y })), Rules: next, Preferred: Vertex
             })));
             points.splice(0, points.length, ...solved.map(({X,Y}) => [X,Y]));
+            redoPoints.length = 0;
             rules = next;
             drawSketch();
             status.textContent = "Constraint applied. Clear constraints to change the outline.";
@@ -833,9 +858,12 @@ function startViewer() {
         drawReference();
     };
     function drawSketch() {
+        preview.removeAttribute("points");
         const fixedShape = shape.value === "Rectangle" || shape.value === "Circle";
         const profile = fixedShape && points.length === 2 ? shapeProfile(shape.value, points) : points;
-        outline.setAttribute("points", profile.map(([x, y]) => [x + 110, 110 - y].join(",")).join(" "));
+        const open = shape.value === "Open path";
+        outline.setAttribute("points", svgPoints(open ? [] : profile));
+        if (open) preview.setAttribute("points", svgPoints(profile));
         vertices.replaceChildren();
         for (const [x, y] of points) {
             const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -881,7 +909,7 @@ function startViewer() {
         byId("plane-choice").disabled = byId("plane-offset").disabled = false;
         byId("plane-choice").value = "XY";
         byId("plane-offset").value = 0;
-        points.length = 0;
+        points.length = redoPoints.length = 0;
         drawSketch();
         showSketch(true);
         sketchHint();
@@ -897,6 +925,7 @@ function startViewer() {
         byId("plane-offset").value = part.Plane === "XZ" ? -part.Y : part.Plane === "YZ" ? part.X : part.Z;
         byId("plane-choice").disabled = byId("plane-offset").disabled = true;
         shape.value = "Polygon";
+        redoPoints.length = 0;
         points.splice(0, points.length, ...project.Parts[selected].Profile.map(({X,Y}) => [X,Y]));
         drawSketch();
         showSketch(true);
@@ -910,7 +939,31 @@ function startViewer() {
             "Open path": "Tap the path points in order, then choose Finish sketch."
         }[shape.value];
     }
-    shape.addEventListener("change", () => { points.length = 0; drawSketch(); sketchHint(); });
+    const svgPoints = vertices => vertices.map(([x,y]) => `${x + 110},${110 - y}`).join(" ");
+    function sketchPoint(event) {
+        const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(plane.getScreenCTM().inverse());
+        return [Math.round(point.x) - 110, 110 - Math.round(point.y)];
+    }
+    shape.addEventListener("change", () => { points.length = redoPoints.length = 0; drawSketch(); sketchHint(); });
+    plane.addEventListener("pointermove", event => {
+        if (!event.isPrimary || !points.length || rules.length || calibration) return;
+        const next = sketchPoint(event), fixed = shape.value === "Rectangle" || shape.value === "Circle";
+        if (fixed && points.length !== 1) return;
+        let draft;
+        if (fixed) {
+            const matchedAxes = next.filter((value, i) => value === points[0][i]).length;
+            if (matchedAxes >= (shape.value === "Rectangle" ? 1 : 2)) {
+                preview.removeAttribute("points");
+                return;
+            }
+            draft = shapeProfile(shape.value, [points[0], next]);
+            draft.push(draft[0]);
+        } else {
+            draft = shape.value === "Open path" ? [...points, next] : [points.at(-1), next];
+        }
+        preview.setAttribute("points", svgPoints(draft));
+    });
+    plane.addEventListener("pointerleave", drawSketch);
     plane.addEventListener("pointerup", event => {
         if (!event.isPrimary || event.button !== 0) return;
         const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(plane.getScreenCTM().inverse());
@@ -937,13 +990,44 @@ function startViewer() {
             return;
         }
         if (points.length >= 256 || rules.length) return;
-        const x = Math.round(point.x), y = Math.round(point.y);
-        if (x < 0 || x > 220 || y < 0 || y > 220) return;
+        const next = sketchPoint(event);
+        if (next.some(value => Math.abs(value) > 110)) return;
+        const last = points.at(-1);
+        if (last && next.every((value, i) => value === last[i])) return;
+        if (shape.value === "Rectangle" && points.length === 1 && next.some((value, i) => value === last[i])) return;
         if ((shape.value === "Rectangle" || shape.value === "Circle") && points.length === 2) points.length = 0;
-        points.push([x - 110, 110 - y]);
+        redoPoints.length = 0;
+        points.push(next);
         drawSketch();
     });
-    undoPoint.addEventListener("click", () => { points.pop(); drawSketch(); });
+    undoPoint.addEventListener("click", () => {
+        if (!points.length || rules.length) return;
+        redoPoints.push(points.pop());
+        drawSketch();
+    });
+    document.addEventListener("keydown", event => {
+        if (event.defaultPrevented || event.target.closest?.("input, textarea, select, [contenteditable]")) return;
+        const key = event.key.toLowerCase(), command = event.ctrlKey || event.metaKey;
+        let action;
+        if (command && (key === "z" || key === "y")) {
+            const forward = key === "y" || event.shiftKey;
+            action = editor.hidden ? () => byId(forward ? "redo" : "undo").click() : forward ? () => {
+                if (redoPoints.length && !rules.length) points.push(redoPoints.pop());
+                drawSketch();
+            } : () => undoPoint.click();
+        } else if (editor.hidden) {
+            if (command && key === "e") action = () => byId("extrude-part").click();
+            if (command && key === "b") action = () => byId("bevel").click();
+            if (key === "backspace" || key === "delete") action = () => byId("remove-part").click();
+        } else if (key === "enter" && !event.target.closest?.("button")) {
+            action = () => byId("finish-sketch").click();
+        } else if (key === "escape") {
+            action = () => byId("cancel-sketch").click();
+        }
+        if (!action) return;
+        event.preventDefault();
+        action();
+    });
     document.querySelector("#cancel-sketch").addEventListener("click", () => {
         showSketch(false);
         status.textContent = "Sketch canceled.";
@@ -1023,7 +1107,7 @@ function startViewer() {
             const result = projectFile ? parseProject(opened) : parseStl(await file.arrayBuffer());
             if (sequence !== loadSequence) return;
             if (!projectFile && !result.triangles.length) throw new Error("This file has no triangles.");
-            upload(result.triangles, result.sketchTriangles);
+            upload(result.triangles, result.sketchTriangles, result.ranges);
             project = opened ?? { ...emptyProject(), Parts: [{ Kind: "Mesh", Name: file.name, Width: 0, Depth: 0, Height: 0, X: 0, Y: 0, Z: 0,
                 Mesh: { Triangles: result.triangles.map(([a,b,c]) => {
                     const point = ([X,Y,Z]) => ({X,Y,Z});
@@ -1051,7 +1135,7 @@ function startViewer() {
         status.textContent = pickingFace ? "Click or tap a planar face to start a sketch." : "Face selection canceled.";
     };
     canvas.addEventListener("click", event => {
-        if (!pickingFace || !tapStart || Math.hypot(event.clientX-tapStart[0], event.clientY-tapStart[1]) > 5) return;
+        if (!tapStart || Math.hypot(event.clientX-tapStart[0], event.clientY-tapStart[1]) > 5) return;
         tapStart = null;
         try {
             const bounds = canvas.getBoundingClientRect();
@@ -1059,6 +1143,32 @@ function startViewer() {
             const x = (2 * (event.clientX - bounds.left) - bounds.width) / fit;
             const y = (bounds.height - 2 * (event.clientY - bounds.top)) / fit;
             const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+            if (!pickingFace) {
+                const project = point => {
+                    const [a,b,c] = point.map((value, i) => (value - modelCenter[i]) / modelRadius);
+                    const depth = a * sy + b * cy;
+                    return [a * cy - b * sy, c * cp + depth * sp, depth * cp - c * sp];
+                };
+                let nearest = 1 / 0.9;
+                selected = -1;
+                for (const [index, [start, end]] of partRanges.entries()) {
+                    for (let i = start; i < end; i++) {
+                        const [a,b,c] = sceneTriangles[i].map(project);
+                        const ux = b[0]-a[0], uy = b[1]-a[1], vx = c[0]-a[0], vy = c[1]-a[1];
+                        const denominator = ux*vy - uy*vx;
+                        if (Math.abs(denominator) < 1e-12) continue;
+                        const u = ((x-a[0])*vy - (y-a[1])*vx) / denominator;
+                        const v = (ux*(y-a[1]) - uy*(x-a[0])) / denominator;
+                        if (u < 0 || v < 0 || u+v > 1) continue;
+                        const depth = a[2] + u*(b[2]-a[2]) + v*(c[2]-a[2]);
+                        if (depth >= nearest) continue;
+                        nearest = depth;
+                        selected = index;
+                    }
+                }
+                refreshParts();
+                return;
+            }
             const direction = [sy * cp, cy * cp, -sp];
             const origin = modelCenter.map((value, i) => value + modelRadius *
                 ([cy * x + sy * sp * y, -sy * x + cy * sp * y, cp * y][i] - 2 * direction[i]));
