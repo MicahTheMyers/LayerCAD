@@ -38,11 +38,16 @@
     <svg id="sketch-plane" viewBox="0 0 220 220" aria-label="XY sketch plane, 220 millimeters square">
       <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 H 0 V 10" fill="none" stroke="#29415a" stroke-width=".4"/></pattern></defs>
       <rect width="220" height="220" fill="url(#grid)"/>
+      <image id="reference-overlay" preserveAspectRatio="none" pointer-events="none"/>
       <path d="M110 0 V220 M0 110 H220" stroke="#4e7591" stroke-width=".5"/>
       <polygon id="outline"/>
       <g id="vertices"></g>
     </svg>
     <div class="sketch-tools">
+      <label class="open">Reference image<input id="reference-file" type="file" accept="image/png,image/jpeg"></label>
+      <button id="reference-settings" type="button" disabled>Image settings</button>
+      <button id="reference-calibrate" type="button" disabled>Calibrate image</button>
+      <button id="reference-remove" type="button" disabled>Remove image</button>
       <label>Shape <select id="shape"><option>Polygon</option><option>Rectangle</option><option>Circle</option><option>Open path</option></select></label>
       <label>Plane <select id="plane-choice"><option>XY</option><option>XZ</option><option>YZ</option></select></label>
       <label>Offset (mm) <input id="plane-offset" type="number" min="-10000" max="10000" step="any" value="0"></label>
@@ -57,5 +62,5 @@
   </div>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-7" defer></script>
+<script src="sketch.js?v=editor-4" defer></script><script src="viewer.js?v=editor-8" defer></script>
 </html>
