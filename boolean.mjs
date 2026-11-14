@@ -58,3 +58,15 @@ export function combine(stock, tool, operation) {
         first?.delete();
     }
 }
+
+export function split(stock, axis, offset) {
+    let source, pieces;
+    try {
+        source = toSolid(stock);
+        pieces = source.splitByPlane(axis, offset);
+        return pieces.map(read);
+    } finally {
+        for (const piece of pieces ?? []) piece.delete();
+        source?.delete();
+    }
+}

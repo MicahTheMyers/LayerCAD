@@ -228,7 +228,7 @@ function startViewer() {
     const byId = id => document.getElementById(id);
     const save = document.querySelector("#save");
     let booleanEngine;
-    import("./boolean.mjs?v=1").then(module => {
+    import("./boolean.mjs?v=2").then(module => {
         booleanEngine = module;
         refreshParts();
     }).catch(() => {
@@ -313,6 +313,9 @@ function startViewer() {
         byId("combine").disabled = !editor.hidden || !booleanEngine || !part || part.Hidden ||
             part.Kind === "Sketch" || !project.Parts.some(item => item !== part && !item.Hidden && item.Kind !== "Sketch");
         byId("shell").disabled = !editor.hidden || !booleanEngine || !canShell(part);
+        const solid = editor.hidden && part && !part.Hidden && part.Kind !== "Sketch";
+        byId("split-body").disabled = !solid || !booleanEngine;
+        byId("scale-body").disabled = !solid;
         byId("remove-part").disabled = !editor.hidden || !part;
         byId("undo").disabled = !editor.hidden || !undo.length;
         byId("redo").disabled = !editor.hidden || !redo.length;
@@ -361,12 +364,53 @@ function startViewer() {
         if (!mesh.length) throw new Error("The selected body has no supported solid geometry.");
         return mesh;
     }
+    function meshBody(name, triangles) {
+        return { Kind: "Mesh", Name: name, X: 0, Y: 0, Z: 0, Width: 0, Depth: 0, Height: 0,
+            Mesh: { Triangles: triangles } };
+    }
+    byId("split-body").onclick = () => {
+        const input = prompt("Split plane and position (mm): XY, XZ, or YZ", "XY, 5");
+        if (input === null) return;
+        const [plane, distance, ...extra] = input.toUpperCase().split(",").map(value => value.trim());
+        const axis = new Map([["XY",[0,0,1]],["XZ",[0,1,0]],["YZ",[1,0,0]]]).get(plane);
+        if (!axis || !distance || extra.length || !Number.isFinite(Number(distance))) {
+            status.textContent = "Choose a plane and a numeric position.";
+            return;
+        }
+        try {
+            const stock = project.Parts[selected];
+            const pieces = booleanEngine.split(solidMesh(stock), axis, Number(distance));
+            if (pieces.some(piece => !piece.length)) throw new Error("Move the plane so it crosses the body.");
+            const parts = [...project.Parts];
+            parts.splice(selected, 1, ...pieces.map((mesh,i) => meshBody(`${stock.Name} ${i+1}`, mesh)));
+            if (changeParts(parts)) status.textContent = "Body split into two pieces.";
+        } catch (error) { status.textContent = error.message; }
+    };
+    byId("scale-body").onclick = () => {
+        const input = prompt("Scale factors X, Y, Z", "1, 1, 1");
+        if (input === null) return;
+        const factors = input.split(",").map(Number);
+        if (factors.length !== 3 || !factors.every(value => value >= 0.001 && value <= 1000)) {
+            status.textContent = "Enter three scale factors between 0.001 and 1000.";
+            return;
+        }
+        try {
+            const part = project.Parts[selected], pivot = [part.X, part.Y, part.Z];
+            const triangles = solidMesh(part).map(triangle => {
+                const point = vertex => {
+                    const [X,Y,Z] = vertex.map((value,i) => pivot[i] + (value-pivot[i]) * factors[i]);
+                    return { X,Y,Z };
+                };
+                return { A: point(triangle[0]), B: point(triangle[1]), C: point(triangle[2]) };
+            });
+            if (changeParts(project.Parts.map(item => item === part ? meshBody(part.Name, triangles) : item))) fit();
+        } catch (error) { status.textContent = error.message; }
+    };
     function applyBoolean(stock, tool, operation, consumeTool) {
         try {
             const triangles = booleanEngine.combine(solidMesh(stock), solidMesh(tool), operation);
             if (!triangles.length) throw new Error("The operation leaves no solid geometry.");
-            const result = { Kind: "Mesh", Name: stock.Name, X: 0, Y: 0, Z: 0,
-                Width: 0, Depth: 0, Height: 0, Mesh: { Triangles: triangles } };
+            const result = meshBody(stock.Name, triangles);
             const parts = project.Parts.filter(part => !consumeTool || part !== tool)
                 .map(part => part === stock ? result : part);
             if (changeParts(parts, parts.indexOf(result))) status.textContent = "Solid operation applied.";
