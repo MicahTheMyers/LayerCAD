@@ -108,12 +108,6 @@ main { border: 0; }
 #view-controls, #volume-label { position: absolute; z-index: 1; top: 9px; }
 #volume-label { left: 8px; font-size: 11px; padding: 4px 7px; border: 1px solid #29415a; border-radius: 5px; background: #101c2b; }
 #view-controls { right: 9px; display: grid; justify-items: center; gap: 7px; }
-.view-cube { display: grid; grid-template-columns: 40px 18px; transform: skewY(4deg); }
-.view-cube button, #fit { padding: 2px 4px; min-height: 22px; border-radius: 2px; font-size: 10px; }
-.view-cube [data-view=top] { grid-column: span 2; background: #455873; }
-.view-cube [data-view=front] { height: 29px; background: #35455c; }
-.view-cube [data-view=right] { background: #27374e; font-size: 0; }
-.view-cube [data-view=right]::after { content: "R"; font-size: 10px; }
 #sketch { background: #0c1522; }
 #sketch-plane { max-width: 66%; align-self: center; }
 @media (max-width: 600px) {
@@ -122,3 +116,10 @@ main { border: 0; }
   #vertices-panel > select { min-height: 50px; }
   #sketch-plane { max-width: 88%; }
 }
+.ribbon-icon svg { width: 27px; height: 27px; }
+.settings summary svg { width: 23px; height: 23px; display: block; }
+.view-cube { display: block; width: 74px; height: 74px; overflow: visible; cursor: grab; touch-action: none; user-select: none; }
+.view-cube:active { cursor: grabbing; }
+.view-cube polygon { stroke: #8a9db5; stroke-width: 1; }
+.view-cube g:hover polygon, .view-cube g:focus-visible polygon { fill: #367778; }
+.view-cube text { fill: #e8f0f9; font-size: 9px; font-weight: 600; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
