@@ -6,3 +6,6 @@ export const buildPart = exports.LayerCAD.BrowserGeometry.BuildPart;
 export const modelPart = exports.LayerCAD.BrowserGeometry.Model;
 export const pickFace = exports.LayerCAD.BrowserGeometry.PickFace;
 export const constrain = exports.LayerCAD.BrowserGeometry.Constrain;
+export const bevel = exports.LayerCAD.BrowserGeometry.Bevel;
+export const hole = exports.LayerCAD.BrowserGeometry.Hole;
+export const thread = exports.LayerCAD.BrowserGeometry.Thread;

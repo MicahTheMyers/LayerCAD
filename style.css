@@ -145,3 +145,12 @@ main { border: 0; }
 #plane-targets polygon:hover { fill: #ffcf8eba; }
 #plane-selector > div { position: absolute; bottom: 12px; left: 50%; display: flex; gap: 6px; transform: translateX(-50%); pointer-events: auto; }
 #plane-selector button { min-height: 33px; padding: 4px 9px; }
+#feature-dialog { width: min(310px, calc(100% - 24px)); padding: 14px; color: inherit; background: #182537; border: 1px solid #465c74; border-radius: 8px; box-shadow: 0 8px 24px #0008; font-size: 13px; }
+#feature-dialog::backdrop { background: #08111f55; }
+#feature-form { display: grid; gap: 9px; }
+#feature-form label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#feature-form input, #feature-form select { width: 116px; padding: 5px; color: inherit; background: #101a28; border: 1px solid #52647a; border-radius: 4px; }
+#feature-form div { display: flex; justify-content: flex-end; gap: 6px; }
+#feature-form button { min-height: 33px; padding: 5px 9px; }
+#feature-error { margin: 0; color: #ffb2b2; }
+#feature-error:empty { display: none; }

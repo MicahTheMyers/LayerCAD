@@ -304,7 +304,7 @@ function startViewer() {
         status.textContent = "The solid boolean engine could not load.";
     });
     const modeling = byId("model-tool");
-    const engineReady = import("./engine/engine.js?v=modeling-2").then(engine => {
+    const engineReady = import("./engine/engine.js?v=features-1").then(engine => {
         geometryEngine = engine;
         modeling.disabled = !editor.hidden;
         refreshParts();
@@ -409,10 +409,11 @@ function startViewer() {
         byId("face-sketch").setAttribute("aria-pressed", pickingFace);
         byId("pattern").disabled = !editor.hidden || !part || part.Kind === "Sketch";
         byId("hole").disabled = !editor.hidden || !geometryEngine ||
-            !["Box", "Cylinder", "Extrusion"].includes(part?.Kind);
-        byId("bevel").disabled = !editor.hidden || !geometryEngine || part?.Kind !== "Box";
+            !["Box", "Cylinder", "Tube", "Extrusion"].includes(part?.Kind);
+        byId("bevel").disabled = !editor.hidden || !geometryEngine || !["Box","Cylinder","Extrusion"].includes(part?.Kind);
         byId("thread").disabled = !editor.hidden || !geometryEngine ||
-            !(part?.Kind === "Cylinder" || part?.Kind === "Tube" || part?.Holes?.length || part?.Kind === "Extrusion");
+            !(part?.Kind === "Cylinder" || part?.Kind === "Tube" || part?.Holes?.length ||
+                part?.Kind === "Extrusion" && part.Profile?.length >= 96);
         byId("combine").disabled = !editor.hidden || !booleanEngine || !part || part.Hidden ||
             part.Kind === "Sketch" || !project.Parts.some(item => item !== part && !item.Hidden && item.Kind !== "Sketch");
         byId("shell").disabled = !editor.hidden || !booleanEngine || !canShell(part);
@@ -483,7 +484,7 @@ function startViewer() {
         return mesh.map(([a,b,c]) => ({ A: point(a), B: point(reverse ? c : b), C: point(reverse ? b : c) }));
     }
     const meshVectors = triangles => triangles.map(({ A, B, C }) => [A, B, C].map(({ X,Y,Z }) => [X,Y,Z]));
-    function extrudeSketch(parts, sketchIndex, distance, operation) {
+    function extrudeSketch(parts, sketchIndex, distance, operation, bodyIndex = -1) {
         if (!["add", "cut", "merge"].includes(operation) || !Number.isFinite(distance) ||
             Math.abs(distance) < 0.01 || Math.abs(distance) > 10000)
             throw new Error("Choose Add, Cut, or Merge and a signed distance of 0.01–10,000 mm.");
@@ -500,6 +501,18 @@ function startViewer() {
         });
         if (operation === "add") {
             parts[sketchIndex] = { ...source, SketchId: link, Hidden: !source.OpenPaths?.length };
+            if (bodyIndex >= 0) {
+                if (!booleanEngine) throw new Error("The solid modeling engine is still loading.");
+                const body = parts[bodyIndex];
+                let vertices = solidMesh(body), triangles;
+                for (const prism of prisms) {
+                    triangles = booleanEngine.applyExtrusion(vertices, solidMesh(prism), "merge");
+                    if (!triangles?.length) throw new Error("The extrusion must connect to the selected body.");
+                    vertices = meshVectors(triangles);
+                }
+                parts[bodyIndex] = meshBody(body.Name, triangles);
+                return parts;
+            }
             return [...parts, ...prisms];
         }
         if (!booleanEngine) throw new Error("The solid modeling engine is still loading.");
@@ -657,67 +670,76 @@ function startViewer() {
             Z: stock.Z+thickness, Height: stock.Height-thickness+1 };
         applyBoolean(stock, cavity, "subtract", false);
     };
-    function modifySelected(update, version) {
-        try {
-            const next = update(project.Parts[selected]);
-            if (!next) return;
-            geometryEngine.buildPart(JSON.stringify(next));
-            changeParts(project.Parts.map((part, i) => i === selected ? next : part), selected, version);
-        } catch (error) { status.textContent = error.message; }
+    const featureDialog = byId("feature-dialog");
+    const featureAmount = byId("feature-amount");
+    const featureSurface = byId("feature-surface");
+    const featureMetric = byId("feature-metric");
+    function customThread() {
+        const custom = featureMetric.value.trim().toLowerCase() === "custom";
+        byId("feature-pitch-label").hidden = byId("feature-depth-label").hidden = !custom;
+        return custom;
     }
-    byId("hole").onclick = () => modifySelected(part => {
-        const answer = prompt("Hole center X, center Y, diameter in local millimeters", "0, 0, 5");
-        if (answer === null) return;
-        const [X, Y, Diameter, ...extra] = answer.split(",").map(Number);
-        if (extra.length || ![X,Y,Diameter].every(Number.isFinite) || Diameter <= 0)
-            throw new Error("Enter a center and a positive diameter.");
-        return { ...part, Holes: [...(part.Holes ?? []), { Axis: part.Kind === "Extrusion" ? "Profile" : "Z",
-            Center: { X,Y }, Diameter, Depth: 0, Through: true, FromEnd: true }] };
-    }, 10);
-    byId("bevel").onclick = () => modifySelected(part => {
+    featureMetric.oninput = customThread;
+    let activeFeature = null;
+    function openFeature(tool) {
+        const part = project.Parts[selected];
+        if (!part) return;
         const detail = selectedDetail;
-        let targets = [[-1,0,1],[1,0,1],[0,-1,1],[0,1,1]];
-        if (detail) {
-            const [u,v] = [detail.face.Frame.Horizontal, detail.face.Frame.Vertical].map(({X,Y,Z}) => [X,Y,Z]);
-            const normal = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]].map(Math.round);
-            if (detail.kind === "Face") {
-                targets = [0,1,2].filter(axis => !normal[axis])
-                    .flatMap(axis => [-1,1].map(sign => normal.map((value,i) => i === axis ? sign : value)));
-            } else {
-                const position = detail.point ?? detail.edges[0][0].map((value,i) => (value+detail.edges[0][1][i])/2);
-                targets = [position.map((value,i) => {
-                    const [min,max] = [[part.X-part.Width/2,part.X+part.Width/2],
-                        [part.Y-part.Depth/2,part.Y+part.Depth/2],[part.Z,part.Z+part.Height]][i];
-                    if (Math.abs(value-min) < 1e-5) return -1;
-                    if (Math.abs(value-max) < 1e-5) return 1;
-                    return 0;
-                })];
-            }
-            if (targets.some(target => target.filter(Boolean).length < 2))
-                throw new Error("Select an original box face, edge, or corner to bevel it.");
+        if (tool === "hole" && !detail?.face) {
+            status.textContent = "Click a flat face where you want the hole, then choose Hole.";
+            return;
         }
-        const answer = prompt(detail ? `${detail.kind} bevel size (mm)` : "Top edge bevel size (mm)", "2");
-        if (answer === null) return;
-        const Amount = Number(answer);
-        if (!Number.isFinite(Amount) || Amount <= 0) throw new Error("Enter a positive bevel size.");
-        const cuts = (part.BevelCuts ?? []).filter(cut => cut.Target.ProfileKind ||
-            !targets.some(([X,Y,Z]) => X === cut.Target.X && Y === cut.Target.Y && Z === cut.Target.Z));
-        for (const [X,Y,Z] of targets) cuts.push({ Target: { X,Y,Z }, Amount });
-        return { ...part, Bevel: 0, BevelCuts: cuts };
-    }, 7);
-    byId("thread").onclick = () => modifySelected(part => {
-        const answer = prompt("Surface (−1 outer, −2 tube bore, 0 first hole), pitch, radial depth, length (mm)",
-            `${part.Holes?.length ? 0 : -1}, 1.5, 0.7, ${Math.min(part.Height, 10)}`);
-        if (answer === null) return;
-        const values = answer.split(",").map(Number);
-        const [Surface, Pitch, Depth, Length] = values;
-        if (values.length !== 4 || !Number.isInteger(Surface) ||
-            ![Pitch, Depth, Length].every(value => Number.isFinite(value) && value > 0))
-            throw new Error("Enter a surface number and positive thread dimensions.");
-        const Threads = (part.Threads ?? []).filter(thread => thread.Surface !== Surface);
-        Threads.push({ Surface, Pitch, Depth, Length, LeftHanded: false, FromEnd: true });
-        return { ...part, Threads };
-    }, 12);
+        const thread = tool === "thread";
+        const labels = { bevel: "Size (mm)", hole: "Diameter (mm)", thread: "Length (mm, 0 for auto)" };
+        const names = { bevel: "Bevel", hole: "Hole", thread: "Thread" };
+        byId("feature-title").textContent = names[tool];
+        byId("feature-amount-label").firstElementChild.textContent = labels[tool];
+        featureAmount.value = { bevel: 2, hole: 5, thread: 0 }[tool];
+        byId("feature-error").textContent = "";
+        byId("feature-surface-label").hidden = byId("feature-metric-label").hidden = !thread;
+        featureMetric.value = "";
+        customThread();
+        if (thread) {
+            const surfaces = (part.Holes ?? []).map((_, i) => new Option("Hole " + (i+1), i));
+            if (part.Kind === "Cylinder" || part.Kind === "Tube" || part.Kind === "Extrusion" && part.Profile?.length >= 96)
+                surfaces.push(new Option("Outer cylindrical surface", -1));
+            if (part.Kind === "Tube") surfaces.push(new Option("Tube bore", -2));
+            featureSurface.replaceChildren(...surfaces);
+        }
+        const point = tool === "hole" ? detail.face.Point : detail?.point ??
+            (detail?.kind === "Edge" ? detail.edges[0][0].map((value,i) => (value+detail.edges[0][1][i])/2) : null);
+        const asPoint = ([X,Y,Z]) => ({ X,Y,Z });
+        activeFeature = { tool, part, index: selected, request: {
+            Part: part, Kind: detail?.kind, Frame: detail?.face.Frame,
+            Point: Array.isArray(point) ? asPoint(point) : point
+        }};
+        featureDialog.showModal();
+        featureAmount.select();
+    }
+    for (const tool of ["bevel","hole","thread"]) byId(tool).onclick = () => openFeature(tool);
+    byId("cancel-feature").onclick = () => featureDialog.close();
+    byId("feature-form").onsubmit = event => {
+        event.preventDefault();
+        const { tool, part, index, request } = activeFeature;
+        const amount = featureAmount.valueAsNumber;
+        const errorText = byId("feature-error");
+        try {
+            if (project.Parts[index] !== part) throw new Error("The selected body changed. Reopen the tool.");
+            const output = tool === "thread"
+                ? geometryEngine.thread(JSON.stringify(part), Number(featureSurface.value),
+                    customThread() ? "custom" : featureMetric.value, amount,
+                    byId("feature-pitch").valueAsNumber, byId("feature-depth").valueAsNumber)
+                : geometryEngine[tool](JSON.stringify(request), amount);
+            const updated = JSON.parse(output);
+            const version = tool === "thread" ? 13 : tool === "hole" ? 17 : 18;
+            if (!changeParts(project.Parts.map((item,i) => i === index ? updated : item), index, version)) {
+                errorText.textContent = status.textContent;
+                return;
+            }
+            featureDialog.close();
+            status.textContent = byId("feature-title").textContent + " applied to " + part.Name + ".";
+        } catch (error) { errorText.textContent = error.message; }
+    };
     modeling.onchange = () => {
         const tool = modeling.value;
         modeling.value = "";
@@ -867,6 +889,29 @@ function startViewer() {
         return { ...face.Center, Kind: "Sketch", Name: part.Name + " · planar face",
             Width: 0, Depth: 0, Height: 0, Profile: profile, FaceFrame: face.Frame, SketchId: crypto.randomUUID() };
     }
+    function extendRegularBody(body, source, amount) {
+        if (!(amount >= 0.01 && amount <= 10000) || body.Bevel || body.BevelCuts?.length ||
+            body.Holes?.length || body.Threads?.length) return null;
+        const origin = modelPoint(source,[0,0,0]);
+        const normal = subtract(modelPoint(source,[0,0,1]),origin);
+        if (body.Kind === "Box") {
+            const axis = normal.findIndex(value => Math.abs(value) > 0.999999);
+            if (axis < 0 || source.Profile.length !== 4) return null;
+            const dimension = ["Width","Depth","Height"][axis], coordinate = ["X","Y","Z"][axis];
+            if (body[dimension]+amount > 10000) return null;
+            const shift = axis === 2 ? Math.min(0,normal[axis])*amount : normal[axis]*amount/2;
+            return { ...body, [dimension]: body[dimension]+amount, [coordinate]: body[coordinate]+shift };
+        }
+        if (body.Kind === "Extrusion" || body.Kind === "Cylinder") {
+            const axis = subtract(modelPoint(body,[0,0,1]),modelPoint(body,[0,0,0]));
+            const direction = dot(normal,axis);
+            if (Math.abs(direction) < 0.999999 || body.Height+amount > 10000) return null;
+            const [X,Y,Z] = modelPoint(body,[0,0,Math.min(0,direction)*amount]);
+            return { ...body, X,Y,Z, Height: body.Height+amount, SketchId: direction < 0 ? undefined : body.SketchId,
+                SketchProfileIndex: direction < 0 ? undefined : body.SketchProfileIndex };
+        }
+        return null;
+    }
     function screenProjector(frame, width, height) {
         const length = viewportScale(width,height) / (2*modelRadius);
         return point => {
@@ -984,12 +1029,15 @@ function startViewer() {
             if (!canExtrude(source)) throw new Error("Select a closed sketch or a planar face.");
             const initial = [...project.Parts];
             const index = extrudeFace ? initial.push(source) - 1 : selected;
-            let parts = extrudeSketch(initial, index, distance, operation);
+            const bodyIndex = extrudeFace && operation === "add" ? selected : -1;
+            const extended = bodyIndex >= 0 ? extendRegularBody(initial[bodyIndex],source,distance) : null;
+            if (extended) initial[bodyIndex] = extended;
+            let parts = extended ? initial : extrudeSketch(initial, index, distance, operation, bodyIndex);
             if (extrudeFace) {
                 parts = parts.filter(part => !(part.Kind === "Sketch" && part.SketchId === source.SketchId))
                     .map(part => part.SketchId === source.SketchId ? { ...part, SketchId: undefined } : part);
             }
-            if (!changeParts(parts, operation === "cut" ? parts.indexOf(source) : parts.length - 1)) {
+            if (!changeParts(parts, bodyIndex >= 0 ? bodyIndex : operation === "cut" ? parts.indexOf(source) : parts.length - 1)) {
                 errorText.textContent = status.textContent;
                 return;
             }
@@ -1422,8 +1470,10 @@ function startViewer() {
                         list[i] = { ...list[i], Profile: outline };
             }
             const operation = byId("sketch-extrude-operation").value.toLowerCase();
-            const parts = extrude ? extrudeSketch(list, index, height, operation) : list;
-            if (!changeParts(parts, !extrude || operation === "cut" ? parts.indexOf(list[index]) : parts.length - 1,
+            const bodyIndex = faceSketch?.Owner && operation === "add" ? list.indexOf(faceSketch.Owner) : -1;
+            const parts = extrude ? extrudeSketch(list, index, height, operation, bodyIndex) : list;
+            if (!changeParts(parts, extrude && bodyIndex >= 0 ? bodyIndex :
+                !extrude || operation === "cut" ? parts.indexOf(list[index]) : parts.length - 1,
                 reference ? 22 : rules.length ? 21 : open ? 17 : 11)) return;
             showSketch(false);
             status.textContent = extrude ? `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom` : "Sketch saved.";
@@ -1641,7 +1691,7 @@ function startViewer() {
                 const hit = JSON.parse(geometryEngine.pickFace(JSON.stringify({
                     Part: part, Origin: vector(origin), Direction: vector(direction)
                 })));
-                if (hit && (!face || hit.Distance < face.Distance)) face = hit;
+                if (hit && (!face || hit.Distance < face.Distance)) face = { ...hit, Owner: part };
             }
             if (!pickingFace) {
                 if (extrudePanel.hidden) {

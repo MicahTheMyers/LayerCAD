@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LayerCAD Web</title>
-<link rel="stylesheet" href="style.css?v=workspace-5">
+<link rel="stylesheet" href="style.css?v=workspace-6">
 <header><details><summary>File ▾</summary><div class="tool-popover"><button type="button" id="new-project">New project</button><label class="open">Open model<input id="file" type="file" accept=".layercad,.stl"></label><button id="save" type="button" disabled>Save project</button></div></details>
   <h1><img src="layercad.ico" width="36" height="36" alt="">LayerCAD</h1>
   <button id="export" type="button" disabled>Export STL</button>
@@ -90,5 +90,18 @@
   </div>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-5" defer></script>
+<dialog id="feature-dialog" aria-labelledby="feature-title">
+  <form id="feature-form">
+    <strong id="feature-title"></strong>
+    <label id="feature-amount-label"><span></span> <input id="feature-amount" type="number" min="0" step="any" required></label>
+    <label id="feature-surface-label" hidden>Surface <select id="feature-surface"></select></label>
+    <label id="feature-metric-label" hidden>Metric size <input id="feature-metric" list="metric-sizes" placeholder="Auto match"></label>
+    <datalist id="metric-sizes"><option>M2</option><option>M2.5</option><option>M3</option><option>M4</option><option>M5</option><option>M6</option><option>M8</option><option>M10</option><option>M12</option><option>Custom</option></datalist>
+    <label id="feature-pitch-label" hidden>Pitch (mm) <input id="feature-pitch" type="number" min="0.01" step="any" value="1.5"></label>
+    <label id="feature-depth-label" hidden>Radial depth (mm) <input id="feature-depth" type="number" min="0.01" step="any" value="0.7"></label>
+    <p id="feature-error" role="alert"></p>
+    <div><button id="cancel-feature" type="button">Cancel</button><button type="submit">Apply</button></div>
+  </form>
+</dialog>
+<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-6" defer></script>
 </html>
