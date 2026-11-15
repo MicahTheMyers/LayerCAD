@@ -90,13 +90,23 @@ function parseProject(project) {
                 triangles.push(triangle.map(([x,y,z]) => [x+part.X,y+part.Y,z+part.Z]));
             continue;
         }
-        if (part.Kind === "Sketch" && part.Profile) {
-            for (const profile of [part.Profile, ...(part.AdditionalProfiles ?? [])]) {
+        if (part.Kind === "Sketch") {
+            for (const profile of [part.Profile, ...(part.AdditionalProfiles ?? [])].filter(Boolean)) {
                 const caps = extrude(profile.map(({X,Y}) => [X,Y]), 1).slice(0, 2 * (profile.length - 2));
                 for (let i = 1; i < caps.length; i += 2)
                     sketchTriangles.push(caps[i].map(([x,y]) => modelPoint(part, [x,y,0.008])));
             }
-            if (part.OpenPaths?.length) skipped++;
+            for (const path of part.OpenPaths ?? []) {
+                for (let i = 1; i < path.length; i++) {
+                    const {X:x,Y:y} = path[i-1], {X:u,Y:v} = path[i];
+                    const length = Math.hypot(u-x,v-y);
+                    if (!length) continue;
+                    const a = -(v-y)*0.18/length, b = (u-x)*0.18/length;
+                    const [p,q,r,s] = [[x-a,y-b],[u-a,v-b],[u+a,v+b],[x+a,y+b]]
+                        .map(([X,Y]) => modelPoint(part,[X,Y,0.008]));
+                    sketchTriangles.push([p,q,r],[p,r,s]);
+                }
+            }
             continue;
         }
         if (part.Kind === "Extrusion" &&
@@ -304,7 +314,7 @@ function startViewer() {
         status.textContent = "The solid boolean engine could not load.";
     });
     const modeling = byId("model-tool");
-    const engineReady = import("./engine/engine.js?v=features-1").then(engine => {
+    const engineReady = import("./engine/engine.js?v=features-2").then(engine => {
         geometryEngine = engine;
         modeling.disabled = !editor.hidden;
         refreshParts();
@@ -400,8 +410,8 @@ function startViewer() {
             });
         }
         const part = project.Parts[selected];
-        byId("edit-sketch").disabled = !editor.hidden || part?.Kind !== "Sketch" || !Array.isArray(part.Profile) ||
-            !!part.Dimensions || !!part.AdditionalProfiles || !!part.OpenPaths;
+        byId("edit-sketch").disabled = !editor.hidden || part?.Kind !== "Sketch" || !!part.Dimensions ||
+            !(part.Profile?.length || part.OpenPaths?.length);
         byId("extrude-part").disabled = !editor.hidden;
         updateExtrudeTarget();
         byId("move-part").disabled = !editor.hidden || !part;
@@ -697,6 +707,8 @@ function startViewer() {
         featureAmount.value = { bevel: 2, hole: 5, thread: 0 }[tool];
         byId("feature-error").textContent = "";
         byId("feature-surface-label").hidden = byId("feature-metric-label").hidden = !thread;
+        byId("feature-bevel-style-label").hidden = tool !== "bevel";
+        byId("feature-bevel-style").value = "Flat";
         featureMetric.value = "";
         customThread();
         if (thread) {
@@ -729,7 +741,8 @@ function startViewer() {
                 ? geometryEngine.thread(JSON.stringify(part), Number(featureSurface.value),
                     customThread() ? "custom" : featureMetric.value, amount,
                     byId("feature-pitch").valueAsNumber, byId("feature-depth").valueAsNumber)
-                : geometryEngine[tool](JSON.stringify(request), amount);
+                : tool === "bevel" ? geometryEngine.bevel(JSON.stringify(request), amount,
+                    byId("feature-bevel-style").value === "Rounded") : geometryEngine.hole(JSON.stringify(request), amount);
             const updated = JSON.parse(output);
             const version = tool === "thread" ? 13 : tool === "hole" ? 17 : 18;
             if (!changeParts(project.Parts.map((item,i) => i === index ? updated : item), index, version)) {
@@ -1077,6 +1090,8 @@ function startViewer() {
     const vertices = document.querySelector("#vertices");
     const points = [];
     const redoPoints = [];
+    const drawings = [];
+    let activeDrawing = -1;
     let rules = [];
     const rulePicker = byId("constraint-rule");
     const vertexPicker = byId("constraint-vertex");
@@ -1102,14 +1117,55 @@ function startViewer() {
     const shape = document.querySelector("#shape");
     const shapeTools = [...document.querySelectorAll("[data-shape]")];
     for (const button of shapeTools) button.onclick = () => {
-        if (shape.value !== button.dataset.shape) {
-            shape.value = button.dataset.shape;
-            shape.dispatchEvent(new Event("change"));
-        }
+        if (shape.value !== button.dataset.shape) startDrawing(button.dataset.shape);
     };
     const twoPointShape = () => ["Rectangle", "Circle", "Triangle"].includes(shape.value);
     const requiresBothAxes = () => ["Rectangle", "Triangle"].includes(shape.value);
     const undoPoint = document.querySelector("#undo-point");
+    const drawingChoice = byId("sketch-drawing-choice");
+    function currentDrawing() {
+        const open = shape.value === "Open path";
+        const outline = open ? points : shapeProfile(shape.value, points);
+        if (open && (outline.length < 2 || outline.some((point,i) => i &&
+            point.every((value, axis) => value === outline[i-1][axis]))))
+            throw new Error("Place at least two distinct consecutive points for the open path.");
+        if (!open) extrudeProfile(outline,1);
+        return { open, points: points.slice(), outline: outline.map(([X,Y]) => ({X,Y})), shape: shape.value, rules };
+    }
+    function allDrawings() {
+        const result = [...drawings];
+        if (activeDrawing >= 0) result[activeDrawing] = currentDrawing();
+        else if (points.length) result.push(currentDrawing());
+        if (result.length > 64) throw new Error("A sketch can contain up to 64 drawings.");
+        return result;
+    }
+    function activateDrawing(index, tool = shape.value) {
+        activeDrawing = index;
+        const drawing = drawings[index];
+        shape.value = drawing?.shape ?? tool;
+        rules = drawing?.rules ?? [];
+        points.splice(0,points.length,...(drawing?.points ?? []));
+        redoPoints.length = 0;
+        drawSketch();
+    }
+    function switchDrawing(index, tool) {
+        try {
+            const next = allDrawings();
+            drawings.splice(0,drawings.length,...next);
+            activateDrawing(index,tool);
+            sketchHint();
+            return true;
+        } catch (error) {
+            drawingChoice.value = String(activeDrawing);
+            status.textContent = error.message;
+            return false;
+        }
+    }
+    function startDrawing(tool = shape.value) {
+        return switchDrawing(-1,tool);
+    }
+    byId("add-sketch-drawing").onclick = () => startDrawing();
+    drawingChoice.onchange = () => switchDrawing(Number(drawingChoice.value));
     const referenceOverlay = byId("reference-overlay");
     let reference = null, referenceSequence = 0, calibration = null;
 
@@ -1193,6 +1249,18 @@ function startViewer() {
         const open = shape.value === "Open path";
         outline.setAttribute("points", svgPoints(open ? [] : profile));
         if (open) preview.setAttribute("points", svgPoints(profile));
+        const drawingGroup = byId("sketch-drawings");
+        drawingGroup.replaceChildren();
+        drawings.forEach((drawing,index) => {
+            if (index === activeDrawing) return;
+            const element = document.createElementNS("http://www.w3.org/2000/svg", drawing.open ? "polyline" : "polygon");
+            element.setAttribute("points",svgPoints(drawing.outline.map(({X,Y}) => [X,Y])));
+            drawingGroup.append(element);
+        });
+        drawingChoice.replaceChildren(...drawings.map((drawing,index) =>
+            new Option(`${index + 1}. ${drawing.shape}`,String(index))), new Option("New drawing","-1"));
+        drawingChoice.value = String(activeDrawing);
+        byId("add-sketch-drawing").disabled = !points.length;
         vertices.replaceChildren();
         for (const [x, y] of points) {
             const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -1205,7 +1273,6 @@ function startViewer() {
         byId("redo-point").disabled = !redoPoints.length || !!rules.length;
         shape.disabled = !!rules.length;
         for (const button of shapeTools) {
-            button.disabled = shape.disabled;
             button.setAttribute("aria-pressed", button.dataset.shape === shape.value);
         }
         const vertex = vertexPicker.value;
@@ -1263,6 +1330,8 @@ function startViewer() {
         byId("plane-choice").disabled = byId("plane-offset").disabled = !!face;
         byId("plane-choice").value = sketchPlane;
         byId("plane-offset").value = 0;
+        drawings.length = 0;
+        activeDrawing = -1;
         points.length = redoPoints.length = 0;
         drawSketch();
         showSketch(true);
@@ -1294,14 +1363,16 @@ function startViewer() {
         faceSketch = null;
         pickingFace = false;
         const part = project.Parts[selected];
-        rules = part.Constraints?.[0] ?? [];
         byId("plane-choice").value = part.Plane ?? "XY";
         byId("plane-offset").value = part.Plane === "XZ" ? -part.Y : part.Plane === "YZ" ? part.X : part.Z;
         byId("plane-choice").disabled = byId("plane-offset").disabled = true;
-        shape.value = "Polygon";
-        redoPoints.length = 0;
-        points.splice(0, points.length, ...project.Parts[selected].Profile.map(({X,Y}) => [X,Y]));
-        drawSketch();
+        const closed = [part.Profile,...(part.AdditionalProfiles ?? [])].filter(Boolean);
+        const paths = part.OpenPaths ?? [];
+        drawings.splice(0,drawings.length,...[...closed,...paths].map((outline,index) => ({
+            open: index >= closed.length, outline, points: outline.map(({X,Y}) => [X,Y]),
+            shape: index < closed.length ? "Polygon" : "Open path", rules: part.Constraints?.[index] ?? []
+        })));
+        activateDrawing(0);
         showSketch(true);
         status.textContent = "Undo points or append vertices, then finish the sketch.";
     };
@@ -1311,7 +1382,7 @@ function startViewer() {
             Rectangle: "Tap two opposite corners of the rectangle.",
             Triangle: "Tap opposite corners of the triangle's bounding box.",
             Circle: "Tap the center, then a point on the circle.",
-            "Open path": "Tap the path points in order, then choose Finish sketch."
+            "Open path": "Place path points, then press Enter to end the path."
         }[shape.value];
     }
     const svgPoints = vertices => vertices.map(([x,y]) => `${x + 110},${110 - y}`).join(" ");
@@ -1319,7 +1390,6 @@ function startViewer() {
         const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(sketchSurface.getScreenCTM().inverse());
         return [Math.round(point.x) - 110, 110 - Math.round(point.y)];
     }
-    shape.addEventListener("change", () => { points.length = redoPoints.length = 0; drawSketch(); sketchHint(); });
     plane.addEventListener("pointermove", event => {
         if (!event.isPrimary || pointers.get(event.pointerId)?.orbit || !points.length || rules.length || calibration) return;
         const next = sketchPoint(event), fixed = twoPointShape();
@@ -1372,7 +1442,11 @@ function startViewer() {
         const last = points.at(-1);
         if (last && next.every((value, i) => value === last[i])) return;
         if (requiresBothAxes() && points.length === 1 && next.some((value, i) => value === last[i])) return;
-        if (twoPointShape() && points.length === 2) points.length = 0;
+        if (twoPointShape() && points.length === 2 && !startDrawing()) return;
+        if (drawings.length >= 64 && activeDrawing < 0) {
+            status.textContent = "A sketch can contain up to 64 drawings.";
+            return;
+        }
         redoPoints.length = 0;
         points.push(next);
         drawSketch();
@@ -1425,7 +1499,8 @@ function startViewer() {
             if (command && key === "b") action = () => byId("bevel").click();
             if (key === "backspace" || key === "delete") action = () => byId("remove-part").click();
         } else if (key === "enter" && !event.target.closest?.("button")) {
-            action = () => byId("finish-sketch").click();
+            action = shape.value === "Open path" && points.length ? () => startDrawing() :
+                () => byId("finish-sketch").click();
         } else if (key === "escape") {
             action = () => byId("cancel-sketch").click();
         }
@@ -1442,12 +1517,13 @@ function startViewer() {
     function finishSketch(extrude) {
         try {
             const height = document.querySelector("#height").valueAsNumber;
-            const open = shape.value === "Open path";
-            if (open && (extrude || points.length < 2 || points.some((point, i) =>
-                i && point[0] === points[i-1][0] && point[1] === points[i-1][1])))
-                throw new Error("Finish an open path with at least two distinct consecutive points.");
-            const profile = open ? points : shapeProfile(shape.value, points);
-            if (!open) extrudeProfile(profile, 1);
+            const drawingsToSave = allDrawings();
+            if (!drawingsToSave.length) throw new Error("Draw at least one profile or open path.");
+            const closed = drawingsToSave.filter(drawing => !drawing.open);
+            const paths = drawingsToSave.filter(drawing => drawing.open);
+            if (extrude && !closed.length) throw new Error("Extrude requires a closed profile.");
+            const profiles = closed.map(drawing => drawing.outline);
+            const constraints = [...closed,...paths].map(drawing => drawing.rules.length ? drawing.rules : null);
             const plane = byId("plane-choice").value;
             const offset = byId("plane-offset").valueAsNumber;
             if (editing < 0 && (!Number.isFinite(offset) || Math.abs(offset) > 10000))
@@ -1455,26 +1531,28 @@ function startViewer() {
             const [X,Y,Z] = editing < 0 ? modelPoint({ Plane: plane, X: 0, Y: 0, Z: 0 }, [0,0,offset]) : [0,0,0];
             const position = { X, Y, Z, Plane: plane, Width: 0, Depth: 0 };
             if (faceSketch) Object.assign(position, faceSketch.Center, { FaceFrame: faceSketch.Frame });
-            const outline = profile.map(([X,Y]) => ({X,Y}));
             const list = [...project.Parts];
             const previous = list[editing];
             const link = previous?.SketchId ?? crypto.randomUUID();
             const index = editing < 0 ? list.length : editing;
             list[index] = { ...position, Kind: "Sketch", Name: `Sketch ${index + 1}`, Height: 0,
-                ...previous, Profile: open ? null : outline, OpenPaths: open ? [outline] : previous?.OpenPaths,
+                ...previous, Profile: profiles[0] ?? null, AdditionalProfiles: profiles.length > 1 ? profiles.slice(1) : undefined,
+                OpenPaths: paths.length ? paths.map(drawing => drawing.outline) : undefined,
                 SketchId: link, Hidden: previous?.Hidden || false, ReferenceImage: reference ?? undefined,
-                Constraints: rules.length ? [rules] : undefined };
+                Constraints: constraints.some(Boolean) ? constraints : undefined };
             if (previous?.SketchId) {
-                for (let i = 0; i < list.length; i++)
-                    if (list[i].Kind === "Extrusion" && list[i].SketchId === link && !list[i].SketchProfileIndex)
-                        list[i] = { ...list[i], Profile: outline };
+                for (let i = 0; i < list.length; i++) {
+                    const item = list[i];
+                    if (item.Kind !== "Extrusion" || item.SketchId !== link) continue;
+                    list[i] = { ...item, Profile: profiles[item.SketchProfileIndex ?? 0] };
+                }
             }
             const operation = byId("sketch-extrude-operation").value.toLowerCase();
             const bodyIndex = faceSketch?.Owner && operation === "add" ? list.indexOf(faceSketch.Owner) : -1;
             const parts = extrude ? extrudeSketch(list, index, height, operation, bodyIndex) : list;
             if (!changeParts(parts, extrude && bodyIndex >= 0 ? bodyIndex :
                 !extrude || operation === "cut" ? parts.indexOf(list[index]) : parts.length - 1,
-                reference ? 22 : rules.length ? 21 : open ? 17 : 11)) return;
+                reference ? 22 : constraints.some(Boolean) ? 21 : paths.length ? 17 : profiles.length > 1 ? 14 : 11)) return;
             showSketch(false);
             status.textContent = extrude ? `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom` : "Sketch saved.";
         } catch (error) {
