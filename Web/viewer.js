@@ -355,7 +355,7 @@ function startViewer() {
                 const pick = document.createElement("button");
                 pick.textContent = part.Name;
                 pick.setAttribute("aria-pressed", index === selected);
-                pick.onclick = () => { selected = index; refreshParts(); };
+                pick.onclick = () => { extrudeFace = null; selected = index; refreshParts(); };
                 const visibility = document.createElement("button");
                 visibility.textContent = part.Hidden ? "○" : "◉";
                 visibility.setAttribute("aria-label", (part.Hidden ? "Show " : "Hide ") + part.Name);
@@ -368,7 +368,8 @@ function startViewer() {
         const part = project.Parts[selected];
         byId("edit-sketch").disabled = !editor.hidden || part?.Kind !== "Sketch" || !Array.isArray(part.Profile) ||
             !!part.Dimensions || !!part.AdditionalProfiles || !!part.OpenPaths;
-        byId("extrude-part").disabled = !editor.hidden || part?.Kind !== "Sketch" || !part.Profile;
+        byId("extrude-part").disabled = !editor.hidden;
+        updateExtrudeTarget();
         byId("move-part").disabled = !editor.hidden || !part;
         byId("face-sketch").disabled = !editor.hidden || !geometryEngine || !model.length;
         byId("face-sketch").setAttribute("aria-pressed", pickingFace);
@@ -395,6 +396,7 @@ function startViewer() {
         const result = parseProject(next);
         upload(result.triangles, result.sketchTriangles, result.ranges);
         project = next;
+        extrudeFace = null;
         uploadPlate();
         refreshParts();
         redraw();
@@ -773,15 +775,76 @@ function startViewer() {
             Name: `${source.Name} copy ${i+1}`, SketchId: undefined, SketchProfileIndex: undefined }));
         if (changeParts([...project.Parts, ...copies])) fit();
     };
+    const extrudePanel = byId("build-extrude");
+    let extrudeFace = null;
+    const canExtrude = part => part?.Kind === "Sketch" && !!part.Profile;
+    function updateExtrudeTarget() {
+        const part = project.Parts[selected];
+        const target = extrudeFace ? extrudeFace.Name : canExtrude(part) ? part.Name : "";
+        byId("extrude-part").setAttribute("aria-pressed", !extrudePanel.hidden);
+        byId("extrude-target").textContent = target || "Select a closed sketch or a planar face.";
+        byId("apply-extrude").disabled = !target;
+    }
+    function closeExtrude() {
+        extrudePanel.hidden = true;
+        extrudeFace = null;
+        updateExtrudeTarget();
+    }
+    function faceExtrusionSource(face, part) {
+        const edges = new Map();
+        const key = ({ X,Y }) => `${X},${Y}`;
+        for (const [start, end] of face.Guide) {
+            const id = key(start);
+            if (edges.has(id)) throw new Error("Choose a face with one closed boundary.");
+            edges.set(id, [start, end]);
+        }
+        const profile = [];
+        const first = edges.keys().next().value;
+        let next = first;
+        while (edges.has(next)) {
+            const [start, end] = edges.get(next);
+            profile.push(start);
+            edges.delete(next);
+            next = key(end);
+        }
+        if (next !== first || edges.size || profile.length < 3)
+            throw new Error("Choose a face with one closed boundary.");
+        return { ...face.Center, Kind: "Sketch", Name: part.Name + " · planar face",
+            Width: 0, Depth: 0, Height: 0, Profile: profile, FaceFrame: face.Frame, SketchId: crypto.randomUUID() };
+    }
     byId("extrude-part").onclick = () => {
-        const value = prompt("Extrusion distance (mm) and operation (Add, Cut, or Merge)", "10, Add");
-        if (value === null) return;
+        if (!extrudePanel.hidden) { closeExtrude(); return; }
+        pickingFace = false;
+        extrudePanel.hidden = false;
+        byId("extrude-error").textContent = "";
+        refreshParts();
+        if (canExtrude(project.Parts[selected])) byId("build-extrude-distance").select();
+    };
+    byId("cancel-extrude").onclick = closeExtrude;
+    extrudePanel.onsubmit = event => {
+        event.preventDefault();
+        const errorText = byId("extrude-error");
+        errorText.textContent = "";
         try {
-            const [distance, operation = "add", ...extra] = value.toLowerCase().split(",").map(item => item.trim());
-            if (extra.length) throw new Error("Enter a distance and one operation.");
-            const parts = extrudeSketch([...project.Parts], selected, Number(distance), operation);
-            if (changeParts(parts, operation === "cut" ? parts.indexOf(project.Parts[selected]) : parts.length - 1)) fit();
-        } catch (error) { status.textContent = error.message; }
+            const distance = byId("build-extrude-distance").valueAsNumber;
+            const operation = byId("build-extrude-operation").value.toLowerCase();
+            const source = extrudeFace ?? project.Parts[selected];
+            if (!canExtrude(source)) throw new Error("Select a closed sketch or a planar face.");
+            const initial = [...project.Parts];
+            const index = extrudeFace ? initial.push(source) - 1 : selected;
+            let parts = extrudeSketch(initial, index, distance, operation);
+            if (extrudeFace) {
+                parts = parts.filter(part => !(part.Kind === "Sketch" && part.SketchId === source.SketchId))
+                    .map(part => part.SketchId === source.SketchId ? { ...part, SketchId: undefined } : part);
+            }
+            if (!changeParts(parts, operation === "cut" ? parts.indexOf(source) : parts.length - 1)) {
+                errorText.textContent = status.textContent;
+                return;
+            }
+            closeExtrude();
+            fit();
+            status.textContent = `Extruded ${distance} mm · ${operation}`;
+        } catch (error) { errorText.textContent = error.message; }
     };
     byId("move-part").onclick = () => {
         const part = project.Parts[selected];
@@ -977,6 +1040,7 @@ function startViewer() {
                 `M ${110+a.X} ${110-a.Y} L ${110+b.X} ${110-b.Y}`).join(" "));
         }
         editor.hidden = !active;
+        closeExtrude();
         byId("build-tools").hidden = active;
         byId("sketch-tools").hidden = !active;
         byId("vertices-panel").hidden = !active;
@@ -1137,6 +1201,7 @@ function startViewer() {
             action = () => byId(editor.hidden ? (forward ? "redo" : "undo") :
                 (forward ? "redo-point" : "undo-point")).click();
         } else if (editor.hidden) {
+            if (key === "escape" && !extrudePanel.hidden) action = closeExtrude;
             if (command && key === "e") action = () => byId("extrude-part").click();
             if (command && key === "b") action = () => byId("bevel").click();
             if (key === "backspace" || key === "delete") action = () => byId("remove-part").click();
@@ -1361,6 +1426,7 @@ function startViewer() {
         tapStart = pointers.size === 1 && event.button === 0 ? [event.clientX, event.clientY] : null;
     });
     byId("face-sketch").onclick = () => {
+        closeExtrude();
         pickingFace = !pickingFace;
         refreshParts();
         status.textContent = pickingFace ? "Click or tap a planar face to start a sketch." : "Face selection canceled.";
@@ -1375,7 +1441,9 @@ function startViewer() {
             const y = (bounds.height - 2 * (event.clientY - bounds.top)) / fit;
             const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
             if (!pickingFace) {
-                const project = point => {
+                extrudeFace = null;
+                byId("extrude-error").textContent = "";
+                const projectPoint = point => {
                     const [a,b,c] = point.map((value, i) => (value - modelCenter[i]) / modelRadius);
                     const depth = a * sy + b * cy;
                     return [a * cy - b * sy, c * cp + depth * sp, depth * cp - c * sp];
@@ -1384,7 +1452,7 @@ function startViewer() {
                 selected = -1;
                 for (const [index, [start, end]] of partRanges.entries()) {
                     for (let i = start; i < end; i++) {
-                        const [a,b,c] = sceneTriangles[i].map(project);
+                        const [a,b,c] = sceneTriangles[i].map(projectPoint);
                         const ux = b[0]-a[0], uy = b[1]-a[1], vx = c[0]-a[0], vy = c[1]-a[1];
                         const denominator = ux*vy - uy*vx;
                         if (Math.abs(denominator) < 1e-12) continue;
@@ -1398,19 +1466,27 @@ function startViewer() {
                     }
                 }
                 refreshParts();
-                return;
+                if (extrudePanel.hidden || selected < 0 || project.Parts[selected].Kind === "Sketch") return;
             }
             const direction = [sy * cp, cy * cp, -sp];
             const origin = modelCenter.map((value, i) => value + modelRadius *
                 ([cy * x + sy * sp * y, -sy * x + cy * sp * y, cp * y][i] - 2 * direction[i]));
             const vector = ([X,Y,Z]) => ({ X,Y,Z });
+            if (!geometryEngine) throw new Error("The advanced geometry engine is unavailable. Select a closed sketch to extrude.");
             let face = null;
-            for (const part of project.Parts) {
+            const targets = pickingFace ? project.Parts : [project.Parts[selected]];
+            for (const part of targets) {
                 if (part.Hidden || part.Kind === "Sketch") continue;
                 const hit = JSON.parse(geometryEngine.pickFace(JSON.stringify({
                     Part: part, Origin: vector(origin), Direction: vector(direction)
                 })));
                 if (hit && (!face || hit.Distance < face.Distance)) face = hit;
+            }
+            if (!pickingFace) {
+                if (!face) throw new Error("Select a planar face or a closed sketch.");
+                extrudeFace = faceExtrusionSource(face, project.Parts[selected]);
+                updateExtrudeTarget();
+                return;
             }
             if (!face) { status.textContent = "Choose a visible planar face."; return; }
             pickingFace = false;
@@ -1419,7 +1495,9 @@ function startViewer() {
             byId("plane-choice").disabled = byId("plane-offset").disabled = true;
             showSketch(true);
             status.textContent = "Sketch origin is at the face center.";
-        } catch (error) { status.textContent = error.message; }
+        } catch (error) {
+            (extrudePanel.hidden ? status : byId("extrude-error")).textContent = error.message;
+        }
     });
     function orbitBuild(dx, dy) {
         yaw += dx * 0.012;

@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LayerCAD Web</title>
-<link rel="stylesheet" href="style.css?v=workspace-3">
+<link rel="stylesheet" href="style.css?v=workspace-4">
 <header><details><summary>File ▾</summary><div class="tool-popover"><button type="button" id="new-project">New project</button><label class="open">Open model<input id="file" type="file" accept=".layercad,.stl"></label><button id="save" type="button" disabled>Save project</button></div></details>
   <h1><img src="layercad.ico" width="36" height="36" alt="">LayerCAD</h1>
   <button id="export" type="button" disabled>Export STL</button>
@@ -38,6 +38,14 @@
   <div id="viewport">
   <div id="view-controls"><svg id="view-cube" class="view-cube" viewBox="0 0 88 88" role="group" aria-label="View orientation. Drag to orbit or click a face."></svg><button id="fit" type="button">Reset view</button></div>
   <output id="volume-label"></output>
+  <form id="build-extrude" hidden aria-label="Extrude">
+    <strong>Extrude</strong>
+    <p id="extrude-target" aria-live="polite"></p>
+    <label>Distance (mm) <input id="build-extrude-distance" type="number" step="any" value="10" required></label>
+    <label>Operation <select id="build-extrude-operation"><option>Add</option><option>Cut</option><option>Merge</option></select></label>
+    <p id="extrude-error" role="alert"></p>
+    <div><button id="cancel-extrude" type="button">Cancel</button><button id="apply-extrude" type="submit">Apply</button></div>
+  </form>
   <canvas id="view" aria-label="3D model viewport"></canvas>
   <section id="sketch" hidden>
     <svg id="sketch-plane" viewBox="0 0 220 220" aria-label="XY sketch plane, 220 millimeters square">
@@ -72,5 +80,5 @@
   </div>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-3" defer></script>
+<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-4" defer></script>
 </html>
