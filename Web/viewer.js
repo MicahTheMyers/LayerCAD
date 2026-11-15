@@ -200,6 +200,7 @@ function startViewer() {
 
     function draw() {
         pending = false;
+        drawViewCube();
         const ratio = Math.min(devicePixelRatio || 1, 2);
         const width = Math.round(canvas.clientWidth * ratio), height = Math.round(canvas.clientHeight * ratio);
         if (!width || !height) return;
@@ -803,7 +804,12 @@ function startViewer() {
     function orientSketch(rotation = 0, tilt = 1) {
         sketchRotation = rotation;
         sketchTilt = tilt;
-        sketchSurface.setAttribute("transform", `translate(110 110) rotate(${rotation}) scale(1 ${tilt}) translate(-110 -110)`);
+        const visibleTilt = (Math.sign(tilt) || 1) * Math.max(0.15, Math.abs(tilt));
+        sketchSurface.setAttribute("transform", `translate(110 110) rotate(${rotation}) scale(1 ${visibleTilt}) translate(-110 -110)`);
+        drawViewCube();
+    }
+    function orbitSketch(dx, dy) {
+        orientSketch(sketchRotation + dx * 0.7, Math.max(-1, Math.min(1, sketchTilt + dy * 0.009)));
     }
     plane.addEventListener("pointerdown", event => {
         if (event.button !== 1) return;
@@ -813,8 +819,7 @@ function startViewer() {
     });
     plane.addEventListener("pointermove", event => {
         if (sketchOrbit !== event.pointerId) return;
-        orientSketch(sketchRotation + event.movementX * 0.4,
-            Math.max(0.15, Math.min(1, sketchTilt + event.movementY * 0.006)));
+        orbitSketch(event.movementX, event.movementY);
     });
     plane.addEventListener("lostpointercapture", () => { sketchOrbit = null; });
     const outline = document.querySelector("#outline");
@@ -1209,15 +1214,84 @@ function startViewer() {
         setTimeout(() => URL.revokeObjectURL(url), 60000);
     }
     byId("fit").onclick = () => editor.hidden ? fit() : orientSketch();
-    for (const button of document.querySelectorAll("[data-view]")) button.onclick = () => {
-        const view = button.dataset.view;
-        if (!editor.hidden) {
-            orientSketch(...({ top: [0,1], front: [0,0.35], right: [90,0.35] }[view]));
-            return;
+    const cube = byId("view-cube");
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    const cubeFaces = [
+        ["Front", 1, -1, 0, 0, "#3b495e"], ["Back", 1, 1, Math.PI, 0, "#3b495e"],
+        ["Right", 0, 1, -Math.PI/2, 0, "#2d394b"], ["Left", 0, -1, Math.PI/2, 0, "#2d394b"],
+        ["Top", 2, 1, 0, Math.PI/2, "#4e5e76"], ["Bottom", 2, -1, 0, -Math.PI/2, "#3e4d63"]
+    ].map(([name, axis, sign, horizontal, vertical, color]) => {
+        const group = document.createElementNS(svgNamespace, "g");
+        group.setAttribute("role", "button");
+        group.setAttribute("aria-label", name + " view");
+        const polygon = document.createElementNS(svgNamespace, "polygon");
+        polygon.setAttribute("fill", color);
+        const label = document.createElementNS(svgNamespace, "text");
+        label.textContent = name.toUpperCase();
+        group.append(polygon, label);
+        cube.append(group);
+        const select = () => {
+            if (editor.hidden) {
+                [yaw, pitch] = [horizontal, vertical];
+                redraw();
+            } else {
+                orientSketch(horizontal * 180 / Math.PI, Math.sin(vertical));
+            }
+        };
+        group.addEventListener("keydown", event => {
+            if (!["Enter", " "].includes(event.key)) return;
+            event.preventDefault();
+            select();
+        });
+        return { group, polygon, label, axis, sign, select };
+    });
+    function drawViewCube() {
+        const horizontal = editor.hidden ? yaw : sketchRotation * Math.PI / 180;
+        const vertical = editor.hidden ? pitch : Math.asin(sketchTilt);
+        const cy = Math.cos(horizontal), sy = Math.sin(horizontal);
+        const cp = Math.cos(vertical), sp = Math.sin(vertical);
+        const camera = [-sy*cp, -cy*cp, sp];
+        const project = ([x,y,z]) => [44 + 21*(x*cy-y*sy), 44 - 21*(z*cp+(x*sy+y*cy)*sp)];
+        for (const { group, polygon, label, axis, sign } of cubeFaces) {
+            const facing = camera[axis] * sign;
+            group.style.display = facing > 0.001 ? "" : "none";
+            group.setAttribute("tabindex", facing > 0.001 ? "0" : "-1");
+            if (facing <= 0.001) continue;
+            const vertex = (a, b) => {
+                const point = [a,b];
+                point.splice(axis, 0, sign);
+                return project(point);
+            };
+            polygon.setAttribute("points", [[-1,-1],[1,-1],[1,1],[-1,1]].map(pair => vertex(...pair).join(",")).join(" "));
+            const [x,y] = vertex(0,0);
+            label.setAttribute("x", x);
+            label.setAttribute("y", y);
+            label.style.display = facing >= 0.36 ? "" : "none";
         }
-        [yaw, pitch] = { top: [0, Math.PI / 2], front: [0, 0], right: [Math.PI / 2, 0] }[view];
-        redraw();
-    };
+    }
+    let cubeDrag = null;
+    cube.addEventListener("pointerdown", event => {
+        if (!event.isPrimary || event.button !== 0) return;
+        const face = cubeFaces.find(item => item.group.contains(event.target));
+        cubeDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, face, moved: false };
+        cube.setPointerCapture(event.pointerId);
+        event.preventDefault();
+    });
+    cube.addEventListener("pointermove", event => {
+        if (cubeDrag?.id !== event.pointerId) return;
+        const dx = event.clientX - cubeDrag.x, dy = event.clientY - cubeDrag.y;
+        if (!cubeDrag.moved && Math.hypot(dx,dy) < 4) return;
+        Object.assign(cubeDrag, { x: event.clientX, y: event.clientY, moved: true });
+        if (editor.hidden) {
+            orbitBuild(dx, dy);
+        } else {
+            orbitSketch(dx, dy);
+        }
+    });
+    cube.addEventListener("pointerup", event => {
+        if (cubeDrag?.id === event.pointerId && !cubeDrag.moved) cubeDrag.face?.select();
+    });
+    cube.addEventListener("lostpointercapture", () => { cubeDrag = null; });
     byId("toggle-parts").onclick = event => {
         const collapsed = byId("parts-panel").classList.toggle("collapsed");
         event.currentTarget.textContent = collapsed ? "›" : "‹";
@@ -1347,6 +1421,11 @@ function startViewer() {
             status.textContent = "Sketch origin is at the face center.";
         } catch (error) { status.textContent = error.message; }
     });
+    function orbitBuild(dx, dy) {
+        yaw += dx * 0.012;
+        pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.012));
+        redraw();
+    }
     canvas.addEventListener("pointermove", event => {
         const old = pointers.get(event.pointerId);
         if (!old) return;
@@ -1354,9 +1433,7 @@ function startViewer() {
         pointers.set(event.pointerId, next);
         if (tapStart && Math.hypot(next[0]-tapStart[0], next[1]-tapStart[1]) > 5) tapStart = null;
         if (pointers.size === 1) {
-            yaw += (next[0] - old[0]) * 0.012;
-            pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + (next[1] - old[1]) * 0.012));
-            redraw();
+            orbitBuild(next[0] - old[0], next[1] - old[1]);
         } else if (pointers.size === 2) {
             const other = [...pointers.entries()].find(([id]) => id !== event.pointerId)[1];
             const before = Math.hypot(old[0] - other[0], old[1] - other[1]);
