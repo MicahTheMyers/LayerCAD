@@ -131,3 +131,17 @@ main { border: 0; }
 #build-extrude button { min-height: 33px; padding: 4px 9px; }
 #extrude-error { color: #ffb2b2; }
 #extrude-error:empty { display: none; }
+#sketch { position: absolute; inset: 0; display: block; padding: 0; background: transparent; }
+#sketch-plane, #detail-overlay { width: 100%; height: 100%; max-width: none; display: block; }
+#detail-overlay { position: absolute; inset: 0; pointer-events: none; }
+#detail-overlay path { stroke: #ffc087; stroke-width: 2; fill: #ff9a4a38; fill-rule: evenodd; }
+#detail-overlay path.edge { stroke-width: 4; fill: none; }
+#detail-overlay circle { fill: #ffab65; stroke: #ffe1bb; stroke-width: 1; }
+#plane-selector, #plane-targets { position: absolute; inset: 0; pointer-events: none; }
+#plane-targets { width: 100%; height: 100%; }
+#plane-targets polygon { fill: #ffa85952; stroke: #ffc785; pointer-events: auto; cursor: pointer; }
+#plane-targets polygon.XZ { fill: #a786f963; stroke: #cbb6ff; }
+#plane-targets polygon.YZ { fill: #6dd4aa63; stroke: #b1f9d6; }
+#plane-targets polygon:hover { fill: #ffcf8eba; }
+#plane-selector > div { position: absolute; bottom: 12px; left: 50%; display: flex; gap: 6px; transform: translateX(-50%); pointer-events: auto; }
+#plane-selector button { min-height: 33px; padding: 4px 9px; }

@@ -155,17 +155,13 @@ function startViewer() {
     attach(gl.VERTEX_SHADER, `
         attribute vec3 position;
         attribute vec3 normal;
-        uniform vec4 angles;
+        uniform mat3 camera;
+        uniform vec3 cameraTarget;
         uniform vec3 scale;
         varying float light;
-        vec3 rotate(vec3 p) {
-            float depth = p.x * angles.y + p.y * angles.x;
-            return vec3(p.x * angles.x - p.y * angles.y,
-                p.z * angles.z + depth * angles.w, depth * angles.z - p.z * angles.w);
-        }
         void main() {
-            gl_Position = vec4(rotate(position) * scale, 1.0);
-            light = 0.42 + 0.58 * abs(dot(rotate(normal), normalize(vec3(-0.35, 0.5, -1.0))));
+            gl_Position = vec4(camera * (position - cameraTarget) * scale, 1.0);
+            light = 0.42 + 0.58 * abs(dot(camera * normal, normalize(vec3(-0.35, 0.5, -1.0))));
         }`);
     attach(gl.FRAGMENT_SHADER, `
         precision mediump float;
@@ -190,13 +186,44 @@ function startViewer() {
         });
     }
     let plateVertices = 0, plateDepth = 1;
-    const angles = gl.getUniformLocation(program, "angles"), scale = gl.getUniformLocation(program, "scale");
+    const camera = gl.getUniformLocation(program, "camera"), scale = gl.getUniformLocation(program, "scale");
+    const cameraTarget = gl.getUniformLocation(program, "cameraTarget");
     const tint = gl.getUniformLocation(program, "tint");
     let solidVertexCount = 0;
     let sceneTriangles = [], partRanges = [];
     const pointers = new Map();
     let tapStart = null;
     let vertexCount = 0, yaw = -0.6, pitch = 0.5, zoom = 1, pending = false, loadSequence = 0;
+    let buildView = null;
+    let selectedDetail = null, choosingSketchPlane = false;
+    const dot = (a,b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    const subtract = (a,b) => a.map((value,i) => value - b[i]);
+    function cameraFrame() {
+        const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+        const rows = [[cy,-sy,0], [sy*sp,cy*sp,cp], [sy*cp,cy*cp,-sp]];
+        if (editor.hidden) return { rows, target: modelCenter, depth: plateDepth };
+        const part = sketchFrame();
+        const target = modelPoint(part, [0,0,0]);
+        const basis = [[1,0,0],[0,1,0],[0,0,1]].map(axis => subtract(modelPoint(part, axis), target));
+        return {
+            rows: rows.map(row => row.reduce((result, value, i) =>
+                result.map((component, axis) => component + value * basis[i][axis]), [0,0,0])),
+            target, depth: plateDepth + Math.hypot(...subtract(target, modelCenter)) / modelRadius,
+            basis
+        };
+    }
+    function viewportScale(width, height) {
+        return Math.min(width, height) * 0.88 * zoom / plateDepth;
+    }
+    function positionSketch(frame, width, height) {
+        const [u,v] = frame.basis;
+        const [right, up] = frame.rows;
+        const k = viewportScale(width, height) / (2 * modelRadius);
+        const a = k*dot(right,u), b = -k*dot(up,u);
+        const c = -k*dot(right,v), d = k*dot(up,v);
+        sketchSurface.setAttribute("transform",
+            `matrix(${a} ${b} ${c} ${d} ${width/2-110*(a+c)} ${height/2-110*(b+d)})`);
+    }
 
     function draw() {
         pending = false;
@@ -209,12 +236,19 @@ function startViewer() {
         gl.viewport(0, 0, width, height);
         gl.clearColor(10 / 255, 20 / 255, 34 / 255, 1);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        const fit = Math.min(width, height) * 0.84 * zoom;
-        gl.uniform4f(angles, Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch));
-        gl.uniform3f(scale, fit / width, fit / height, 0.9 / plateDepth);
+        const fit = viewportScale(width, height);
+        const frame = cameraFrame();
+        gl.uniformMatrix3fv(camera, false, [0,1,2].flatMap(axis => frame.rows.map(row => row[axis])));
+        gl.uniform3fv(cameraTarget, subtract(frame.target, modelCenter).map(value => value / modelRadius));
+        gl.uniform3f(scale, fit / width, fit / height, 0.9 / frame.depth);
+        if (!editor.hidden) positionSketch(frame, canvas.clientWidth, canvas.clientHeight);
+        drawDetails(frame, canvas.clientWidth, canvas.clientHeight);
         bindGeometry(plateBuffer);
         gl.uniform3f(tint, 0.16, 0.24, 0.34);
+        gl.enable(gl.POLYGON_OFFSET_FILL);
+        gl.polygonOffset(1, 1);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.disable(gl.POLYGON_OFFSET_FILL);
         gl.uniform3f(tint, 0.32, 0.43, 0.56);
         gl.drawArrays(gl.LINES, 6, plateVertices - 10);
         gl.uniform3f(tint, 0.78, 0.35, 0.33);
@@ -222,7 +256,7 @@ function startViewer() {
         gl.uniform3f(tint, 0.35, 0.67, 0.47);
         gl.drawArrays(gl.LINES, plateVertices - 2, 2);
         bindGeometry(buffer);
-        const [start, end] = (partRanges[selected] ?? [0, 0]).map(index => index * 3);
+        const [start, end] = ((selectedDetail ? null : partRanges[selected]) ?? [0, 0]).map(index => index * 3);
         function drawRange(first, last, color) {
             gl.uniform3f(tint, ...color);
             gl.drawArrays(gl.TRIANGLES, first, last - first);
@@ -245,8 +279,8 @@ function startViewer() {
         }
     }
     function fit() {
-        yaw = -0.6;
-        pitch = 0.5;
+        yaw = editor.hidden ? -0.6 : 0;
+        pitch = editor.hidden ? 0.5 : Math.PI / 2;
         zoom = 1;
         redraw();
     }
@@ -324,8 +358,8 @@ function startViewer() {
             data.push(...p, 0, 0, 1);
         };
         plateDepth = 1;
-        for (const [a,b] of [[-x,-y],[x,-y],[x,y],[-x,-y],[x,y],[-x,y]]) point(a,b,-0.06);
-        const line = (a,b,c,d) => { point(a,b,-0.035); point(c,d,-0.035); };
+        for (const [a,b] of [[-x,-y],[x,-y],[x,y],[-x,-y],[x,y],[-x,y]]) point(a,b,-0.04);
+        const line = (a,b,c,d) => { point(a,b,-0.04); point(c,d,-0.04); };
         for (const a of [-x, x]) line(a,-y,a,y);
         for (const b of [-y, y]) line(-x,b,x,b);
         for (let a = 10; a < x && a <= 1000; a += 10) { line(a,-y,a,y); line(-a,-y,-a,y); }
@@ -355,7 +389,7 @@ function startViewer() {
                 const pick = document.createElement("button");
                 pick.textContent = part.Name;
                 pick.setAttribute("aria-pressed", index === selected);
-                pick.onclick = () => { extrudeFace = null; selected = index; refreshParts(); };
+                pick.onclick = () => { extrudeFace = selectedDetail = null; selected = index; refreshParts(); };
                 const visibility = document.createElement("button");
                 visibility.textContent = part.Hidden ? "○" : "◉";
                 visibility.setAttribute("aria-label", (part.Hidden ? "Show " : "Hide ") + part.Name);
@@ -396,7 +430,7 @@ function startViewer() {
         const result = parseProject(next);
         upload(result.triangles, result.sketchTriangles, result.ranges);
         project = next;
-        extrudeFace = null;
+        extrudeFace = selectedDetail = null;
         uploadPlate();
         refreshParts();
         redraw();
@@ -641,13 +675,34 @@ function startViewer() {
             Center: { X,Y }, Diameter, Depth: 0, Through: true, FromEnd: true }] };
     }, 10);
     byId("bevel").onclick = () => modifySelected(part => {
-        const answer = prompt("Top edge bevel size (mm)", "2");
+        const detail = selectedDetail;
+        let targets = [[-1,0,1],[1,0,1],[0,-1,1],[0,1,1]];
+        if (detail) {
+            const [u,v] = [detail.face.Frame.Horizontal, detail.face.Frame.Vertical].map(({X,Y,Z}) => [X,Y,Z]);
+            const normal = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]].map(Math.round);
+            if (detail.kind === "Face") {
+                targets = [0,1,2].filter(axis => !normal[axis])
+                    .flatMap(axis => [-1,1].map(sign => normal.map((value,i) => i === axis ? sign : value)));
+            } else {
+                const position = detail.point ?? detail.edges[0][0].map((value,i) => (value+detail.edges[0][1][i])/2);
+                targets = [position.map((value,i) => {
+                    const [min,max] = [[part.X-part.Width/2,part.X+part.Width/2],
+                        [part.Y-part.Depth/2,part.Y+part.Depth/2],[part.Z,part.Z+part.Height]][i];
+                    if (Math.abs(value-min) < 1e-5) return -1;
+                    if (Math.abs(value-max) < 1e-5) return 1;
+                    return 0;
+                })];
+            }
+            if (targets.some(target => target.filter(Boolean).length < 2))
+                throw new Error("Select an original box face, edge, or corner to bevel it.");
+        }
+        const answer = prompt(detail ? `${detail.kind} bevel size (mm)` : "Top edge bevel size (mm)", "2");
         if (answer === null) return;
         const Amount = Number(answer);
         if (!Number.isFinite(Amount) || Amount <= 0) throw new Error("Enter a positive bevel size.");
-        const cuts = (part.BevelCuts ?? []).filter(cut => cut.Target.Z !== 1 || cut.Target.ProfileKind);
-        for (const [X,Y] of [[-1,0],[1,0],[0,-1],[0,1]])
-            cuts.push({ Target: { X,Y,Z:1 }, Amount });
+        const cuts = (part.BevelCuts ?? []).filter(cut => cut.Target.ProfileKind ||
+            !targets.some(([X,Y,Z]) => X === cut.Target.X && Y === cut.Target.Y && Z === cut.Target.Z));
+        for (const [X,Y,Z] of targets) cuts.push({ Target: { X,Y,Z }, Amount });
         return { ...part, Bevel: 0, BevelCuts: cuts };
     }, 7);
     byId("thread").onclick = () => modifySelected(part => {
@@ -812,11 +867,108 @@ function startViewer() {
         return { ...face.Center, Kind: "Sketch", Name: part.Name + " · planar face",
             Width: 0, Depth: 0, Height: 0, Profile: profile, FaceFrame: face.Frame, SketchId: crypto.randomUUID() };
     }
+    function screenProjector(frame, width, height) {
+        const length = viewportScale(width,height) / (2*modelRadius);
+        return point => {
+            const delta = subtract(point,frame.target);
+            return [width/2 + length*dot(frame.rows[0],delta), height/2 - length*dot(frame.rows[1],delta)];
+        };
+    }
+    function worldFaceEdges(face) {
+        const part = { ...face.Center, FaceFrame: face.Frame };
+        return face.Guide.map(edge => edge.map(({ X,Y }) => modelPoint(part,[X,Y,0])));
+    }
+    function pickDetail(face, x, y, bounds) {
+        const edges = worldFaceEdges(face);
+        const project = screenProjector(cameraFrame(), bounds.width, bounds.height);
+        const pointer = [x,y];
+        const pointDistance = point => Math.hypot(...subtract(project(point),pointer));
+        const key = point => point.join(",");
+        const starts = new Map(edges.map(edge => [key(edge[0]),edge]));
+        const ends = new Map(edges.map(edge => [key(edge[1]),edge]));
+        function smooth(first, second) {
+            if (!first || !second) return false;
+            const a = subtract(first[1],first[0]), b = subtract(second[1],second[0]);
+            return dot(a,b) > 0.94*Math.hypot(...a)*Math.hypot(...b);
+        }
+        const corner = edges.map(edge => edge[0]).filter(point => !smooth(ends.get(key(point)),starts.get(key(point))))
+            .filter(point => pointDistance(point) <= 8).sort((a,b) => pointDistance(a)-pointDistance(b))[0];
+        if (corner) return { face, kind: "Corner", point: corner };
+        const edgeDistance = ([a,b]) => {
+            const [u,v] = [project(a),project(b)];
+            const d = subtract(v,u), p = subtract(pointer,u);
+            const length = d[0]**2+d[1]**2;
+            const t = length ? Math.max(0,Math.min(1,(p[0]*d[0]+p[1]*d[1])/length)) : 0;
+            return Math.hypot(p[0]-t*d[0],p[1]-t*d[1]);
+        };
+        const edge = edges.filter(item => edgeDistance(item) <= 7).sort((a,b) => edgeDistance(a)-edgeDistance(b))[0];
+        if (!edge) return { face, kind: "Face", edges };
+        const chain = new Set([edge]);
+        for (let next = starts.get(key(edge[1])), previous = edge; smooth(previous,next) && !chain.has(next);
+            previous = next, next = starts.get(key(next[1]))) chain.add(next);
+        for (let previous = ends.get(key(edge[0])), next = edge; smooth(previous,next) && !chain.has(previous);
+            next = previous, previous = ends.get(key(previous[0]))) chain.add(previous);
+        return { face, kind: "Edge", edges: [...chain] };
+    }
+    function drawDetails(frame,width,height) {
+        const overlay = byId("detail-overlay");
+        overlay.replaceChildren();
+        const targets = byId("plane-targets");
+        targets.replaceChildren();
+        if (choosingSketchPlane) {
+            const project = screenProjector(frame,width,height);
+            const extent = modelRadius * plateDepth * 0.23;
+            for (const plane of ["XY","XZ","YZ"]) {
+                const part = { Plane: plane, X:0, Y:0, Z:0 };
+                const polygon = document.createElementNS(svgNamespace,"polygon");
+                const points = [[0.23,0.23],[1,0.23],[1,1],[0.23,1]];
+                polygon.setAttribute("points",points.map(([x,y]) => project(modelPoint(part,[x*extent,y*extent,0])).join(",")).join(" "));
+                polygon.setAttribute("class",plane);
+                polygon.onclick = () => beginSketch(plane);
+                targets.append(polygon);
+            }
+        }
+        if (!editor.hidden || !selectedDetail) return;
+        const project = screenProjector(frame,width,height);
+        const { kind, point, edges } = selectedDetail;
+        if (point) {
+            const dot = document.createElementNS(svgNamespace,"circle");
+            const [x,y] = project(point);
+            for (const [name,value] of Object.entries({cx:x,cy:y,r:5})) dot.setAttribute(name,value);
+            overlay.append(dot);
+            return;
+        }
+        const path = document.createElementNS(svgNamespace,"path");
+        if (kind === "Edge") {
+            path.setAttribute("class","edge");
+            path.setAttribute("d",edges.map(([a,b]) => `M${project(a)} L${project(b)}`).join(" "));
+        } else {
+            const ring = new Map(edges.map(([a,b]) => [a.join(","),[a,b]]));
+            let data = "";
+            while (ring.size) {
+                let key = ring.keys().next().value;
+                data += `M${project(ring.get(key)[0])}`;
+                while (ring.has(key)) {
+                    const end = ring.get(key)[1];
+                    ring.delete(key);
+                    data += ` L${project(end)}`;
+                    key = end.join(",");
+                }
+                data += " Z ";
+            }
+            path.setAttribute("d",data);
+        }
+        overlay.append(path);
+    }
     byId("extrude-part").onclick = () => {
         if (!extrudePanel.hidden) { closeExtrude(); return; }
         pickingFace = false;
         extrudePanel.hidden = false;
         byId("extrude-error").textContent = "";
+        if (selectedDetail?.kind === "Face") {
+            try { extrudeFace = faceExtrusionSource(selectedDetail.face, project.Parts[selected]); }
+            catch (error) { byId("extrude-error").textContent = error.message; }
+        }
         refreshParts();
         if (canExtrude(project.Parts[selected])) byId("build-extrude-distance").select();
     };
@@ -863,28 +1015,15 @@ function startViewer() {
     const editor = document.querySelector("#sketch");
     const plane = document.querySelector("#sketch-plane");
     const sketchSurface = byId("sketch-surface");
-    let sketchRotation = 0, sketchTilt = 1, sketchOrbit = null;
-    function orientSketch(rotation = 0, tilt = 1) {
-        sketchRotation = rotation;
-        sketchTilt = tilt;
-        const visibleTilt = (Math.sign(tilt) || 1) * Math.max(0.15, Math.abs(tilt));
-        sketchSurface.setAttribute("transform", `translate(110 110) rotate(${rotation}) scale(1 ${visibleTilt}) translate(-110 -110)`);
-        drawViewCube();
+    function sketchFrame() {
+        if (project.Parts[editing]) return project.Parts[editing];
+        if (faceSketch) return { ...faceSketch.Center, FaceFrame: faceSketch.Frame };
+        const part = { Plane: byId("plane-choice").value, X: 0, Y: 0, Z: 0 };
+        const [X,Y,Z] = modelPoint(part, [0,0,byId("plane-offset").valueAsNumber || 0]);
+        return { ...part, X, Y, Z };
     }
-    function orbitSketch(dx, dy) {
-        orientSketch(sketchRotation + dx * 0.7, Math.max(-1, Math.min(1, sketchTilt + dy * 0.009)));
-    }
-    plane.addEventListener("pointerdown", event => {
-        if (event.button !== 1) return;
-        event.preventDefault();
-        sketchOrbit = event.pointerId;
-        plane.setPointerCapture(event.pointerId);
-    });
-    plane.addEventListener("pointermove", event => {
-        if (sketchOrbit !== event.pointerId) return;
-        orbitSketch(event.movementX, event.movementY);
-    });
-    plane.addEventListener("lostpointercapture", () => { sketchOrbit = null; });
+    byId("plane-choice").onchange = fit;
+    byId("plane-offset").oninput = redraw;
     const outline = document.querySelector("#outline");
     const preview = byId("sketch-preview");
     const vertices = document.querySelector("#vertices");
@@ -1029,10 +1168,11 @@ function startViewer() {
         byId("add-vertex").disabled = !!rules.length;
     }
     function showSketch(active) {
+        chooseSketchPlane(false);
         ++referenceSequence;
         calibration = null;
         if (active) {
-            orientSketch();
+            if (editor.hidden) buildView = [yaw,pitch,zoom];
             reference = project.Parts[editing]?.ReferenceImage ?? null;
             drawReference();
             const guide = faceSketch?.Guide ?? [];
@@ -1040,6 +1180,11 @@ function startViewer() {
                 `M ${110+a.X} ${110-a.Y} L ${110+b.X} ${110-b.Y}`).join(" "));
         }
         editor.hidden = !active;
+        if (active) fit();
+        else if (buildView) {
+            [yaw,pitch,zoom] = buildView;
+            buildView = null;
+        }
         closeExtrude();
         byId("build-tools").hidden = active;
         byId("sketch-tools").hidden = !active;
@@ -1047,7 +1192,6 @@ function startViewer() {
         byId("parts-panel").hidden = active;
         byId("volume-label").hidden = active;
         for (const detail of byId("sketch-tools").querySelectorAll("details")) detail.open = false;
-        canvas.hidden = active;
         document.querySelector("#start-sketch").disabled = active;
         byId("mode").textContent = active ? "Sketch" : "Build Mode";
         byId("primitive").disabled = active;
@@ -1055,21 +1199,47 @@ function startViewer() {
         refreshParts();
         if (!active) redraw();
     }
-    document.querySelector("#start-sketch").addEventListener("click", () => {
+    function chooseSketchPlane(active) {
+        choosingSketchPlane = active;
+        byId("plane-selector").hidden = !active;
+        byId("start-sketch").setAttribute("aria-pressed",active);
+        redraw();
+    }
+    function beginSketch(sketchPlane = "XY", face = null) {
         ++loadSequence;
         editing = -1;
         rules = [];
         shape.value = "Polygon";
-        faceSketch = null;
+        faceSketch = face;
         pickingFace = false;
-        byId("plane-choice").disabled = byId("plane-offset").disabled = false;
-        byId("plane-choice").value = "XY";
+        byId("plane-choice").disabled = byId("plane-offset").disabled = !!face;
+        byId("plane-choice").value = sketchPlane;
         byId("plane-offset").value = 0;
         points.length = redoPoints.length = 0;
         drawSketch();
         showSketch(true);
-        sketchHint();
-    });
+        if (face) status.textContent = "Sketch origin is at the face center.";
+        else sketchHint();
+    }
+    byId("start-sketch").onclick = () => {
+        if (selectedDetail?.kind === "Face") {
+            beginSketch("XY",selectedDetail.face);
+            return;
+        }
+        closeExtrude();
+        pickingFace = !choosingSketchPlane;
+        chooseSketchPlane(pickingFace);
+        refreshParts();
+        status.textContent = pickingFace ? "Select an origin plane or click a planar face." : "Plane selection canceled.";
+    };
+    for (const button of document.querySelectorAll("[data-plane]"))
+        button.onclick = () => beginSketch(button.dataset.plane);
+    byId("cancel-plane").onclick = () => {
+        pickingFace = false;
+        chooseSketchPlane(false);
+        refreshParts();
+        status.textContent = "Plane selection canceled.";
+    };
     byId("edit-sketch").onclick = () => {
         ++loadSequence;
         editing = selected;
@@ -1103,7 +1273,7 @@ function startViewer() {
     }
     shape.addEventListener("change", () => { points.length = redoPoints.length = 0; drawSketch(); sketchHint(); });
     plane.addEventListener("pointermove", event => {
-        if (!event.isPrimary || sketchOrbit !== null || !points.length || rules.length || calibration) return;
+        if (!event.isPrimary || pointers.get(event.pointerId)?.orbit || !points.length || rules.length || calibration) return;
         const next = sketchPoint(event), fixed = twoPointShape();
         if (fixed && points.length !== 1) return;
         let draft;
@@ -1122,7 +1292,7 @@ function startViewer() {
     });
     plane.addEventListener("pointerleave", drawSketch);
     plane.addEventListener("pointerup", event => {
-        if (!event.isPrimary || event.button !== 0) return;
+        if (!event.isPrimary || event.button !== 0 || pointers.get(event.pointerId)?.moved) return;
         const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(sketchSurface.getScreenCTM().inverse());
         if (calibration) {
             const x = point.x - 110, y = 110 - point.y;
@@ -1201,6 +1371,7 @@ function startViewer() {
             action = () => byId(editor.hidden ? (forward ? "redo" : "undo") :
                 (forward ? "redo-point" : "undo-point")).click();
         } else if (editor.hidden) {
+            if (key === "escape" && choosingSketchPlane) action = () => byId("cancel-plane").click();
             if (key === "escape" && !extrudePanel.hidden) action = closeExtrude;
             if (command && key === "e") action = () => byId("extrude-part").click();
             if (command && key === "b") action = () => byId("bevel").click();
@@ -1255,7 +1426,6 @@ function startViewer() {
             if (!changeParts(parts, !extrude || operation === "cut" ? parts.indexOf(list[index]) : parts.length - 1,
                 reference ? 22 : rules.length ? 21 : open ? 17 : 11)) return;
             showSketch(false);
-            fit();
             status.textContent = extrude ? `Extruded ${height} mm · Drag to orbit · Pinch or scroll to zoom` : "Sketch saved.";
         } catch (error) {
             status.textContent = error.message;
@@ -1278,7 +1448,7 @@ function startViewer() {
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
     }
-    byId("fit").onclick = () => editor.hidden ? fit() : orientSketch();
+    byId("fit").onclick = fit;
     const cube = byId("view-cube");
     const svgNamespace = "http://www.w3.org/2000/svg";
     const cubeFaces = [
@@ -1296,12 +1466,9 @@ function startViewer() {
         group.append(polygon, label);
         cube.append(group);
         const select = () => {
-            if (editor.hidden) {
-                [yaw, pitch] = [horizontal, vertical];
-                redraw();
-            } else {
-                orientSketch(horizontal * 180 / Math.PI, Math.sin(vertical));
-            }
+            yaw = horizontal;
+            pitch = !editor.hidden && vertical === 0 ? 0.035 : vertical;
+            redraw();
         };
         group.addEventListener("keydown", event => {
             if (!["Enter", " "].includes(event.key)) return;
@@ -1311,8 +1478,7 @@ function startViewer() {
         return { group, polygon, label, axis, sign, select };
     });
     function drawViewCube() {
-        const horizontal = editor.hidden ? yaw : sketchRotation * Math.PI / 180;
-        const vertical = editor.hidden ? pitch : Math.asin(sketchTilt);
+        const horizontal = yaw, vertical = pitch;
         const cy = Math.cos(horizontal), sy = Math.sin(horizontal);
         const cp = Math.cos(vertical), sp = Math.sin(vertical);
         const camera = [-sy*cp, -cy*cp, sp];
@@ -1347,11 +1513,7 @@ function startViewer() {
         const dx = event.clientX - cubeDrag.x, dy = event.clientY - cubeDrag.y;
         if (!cubeDrag.moved && Math.hypot(dx,dy) < 4) return;
         Object.assign(cubeDrag, { x: event.clientX, y: event.clientY, moved: true });
-        if (editor.hidden) {
-            orbitBuild(dx, dy);
-        } else {
-            orbitSketch(dx, dy);
-        }
+        orbit(dx, dy);
     });
     cube.addEventListener("pointerup", event => {
         if (cubeDrag?.id === event.pointerId && !cubeDrag.moved) cubeDrag.face?.select();
@@ -1420,13 +1582,9 @@ function startViewer() {
             if (sequence === loadSequence) status.textContent = error.message;
         }
     });
-    canvas.addEventListener("pointerdown", event => {
-        canvas.setPointerCapture(event.pointerId);
-        pointers.set(event.pointerId, [event.clientX, event.clientY]);
-        tapStart = pointers.size === 1 && event.button === 0 ? [event.clientX, event.clientY] : null;
-    });
     byId("face-sketch").onclick = () => {
         closeExtrude();
+        chooseSketchPlane(false);
         pickingFace = !pickingFace;
         refreshParts();
         status.textContent = pickingFace ? "Click or tap a planar face to start a sketch." : "Face selection canceled.";
@@ -1436,12 +1594,12 @@ function startViewer() {
         tapStart = null;
         try {
             const bounds = canvas.getBoundingClientRect();
-            const fit = Math.min(bounds.width, bounds.height) * 0.84 * zoom;
+            const fit = viewportScale(bounds.width, bounds.height);
             const x = (2 * (event.clientX - bounds.left) - bounds.width) / fit;
             const y = (bounds.height - 2 * (event.clientY - bounds.top)) / fit;
             const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
             if (!pickingFace) {
-                extrudeFace = null;
+                extrudeFace = selectedDetail = null;
                 byId("extrude-error").textContent = "";
                 const projectPoint = point => {
                     const [a,b,c] = point.map((value, i) => (value - modelCenter[i]) / modelRadius);
@@ -1466,13 +1624,16 @@ function startViewer() {
                     }
                 }
                 refreshParts();
-                if (extrudePanel.hidden || selected < 0 || project.Parts[selected].Kind === "Sketch") return;
+                if (selected < 0 || project.Parts[selected].Kind === "Sketch") return;
             }
             const direction = [sy * cp, cy * cp, -sp];
             const origin = modelCenter.map((value, i) => value + modelRadius *
                 ([cy * x + sy * sp * y, -sy * x + cy * sp * y, cp * y][i] - 2 * direction[i]));
             const vector = ([X,Y,Z]) => ({ X,Y,Z });
-            if (!geometryEngine) throw new Error("The advanced geometry engine is unavailable. Select a closed sketch to extrude.");
+            if (!geometryEngine) {
+                if (!extrudePanel.hidden || pickingFace) throw new Error("Face picking requires the advanced geometry engine.");
+                return;
+            }
             let face = null;
             const targets = pickingFace ? project.Parts : [project.Parts[selected]];
             for (const part of targets) {
@@ -1483,48 +1644,68 @@ function startViewer() {
                 if (hit && (!face || hit.Distance < face.Distance)) face = hit;
             }
             if (!pickingFace) {
+                if (extrudePanel.hidden) {
+                    if (face) {
+                        selectedDetail = pickDetail(face,event.clientX-bounds.left,event.clientY-bounds.top,bounds);
+                        status.textContent = `${selectedDetail.kind} selected · ${project.Parts[selected].Name}`;
+                        redraw();
+                    }
+                    return;
+                }
                 if (!face) throw new Error("Select a planar face or a closed sketch.");
                 extrudeFace = faceExtrusionSource(face, project.Parts[selected]);
                 updateExtrudeTarget();
                 return;
             }
             if (!face) { status.textContent = "Choose a visible planar face."; return; }
-            pickingFace = false;
-            byId("start-sketch").click();
-            faceSketch = face;
-            byId("plane-choice").disabled = byId("plane-offset").disabled = true;
-            showSketch(true);
-            status.textContent = "Sketch origin is at the face center.";
+            beginSketch("XY",face);
         } catch (error) {
             (extrudePanel.hidden ? status : byId("extrude-error")).textContent = error.message;
         }
     });
-    function orbitBuild(dx, dy) {
+    function orbit(dx, dy) {
         yaw += dx * 0.012;
         pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch + dy * 0.012));
+        if (!editor.hidden && Math.abs(pitch) < 0.035) pitch = (Math.sign(pitch) || 1) * 0.035;
         redraw();
     }
-    canvas.addEventListener("pointermove", event => {
-        const old = pointers.get(event.pointerId);
-        if (!old) return;
-        const next = [event.clientX, event.clientY];
-        pointers.set(event.pointerId, next);
-        if (tapStart && Math.hypot(next[0]-tapStart[0], next[1]-tapStart[1]) > 5) tapStart = null;
-        if (pointers.size === 1) {
-            orbitBuild(next[0] - old[0], next[1] - old[1]);
-        } else if (pointers.size === 2) {
-            const other = [...pointers.entries()].find(([id]) => id !== event.pointerId)[1];
-            const before = Math.hypot(old[0] - other[0], old[1] - other[1]);
-            if (before > 0) scaleBy(Math.hypot(next[0] - other[0], next[1] - other[1]) / before);
-        }
-    });
-    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
-        canvas.addEventListener(type, event => pointers.delete(event.pointerId));
+    for (const surface of [canvas, plane]) {
+        surface.addEventListener("pointerdown", event => {
+            if (![0,1].includes(event.button)) return;
+            surface.setPointerCapture(event.pointerId);
+            const orbit = event.button === 1 || event.pointerType === "touch";
+            if (event.button === 1) event.preventDefault();
+            const start = [event.clientX,event.clientY];
+            pointers.set(event.pointerId, { start, last: start, orbit, moved: false });
+            tapStart = pointers.size === 1 && event.button === 0 ? start : null;
+            if (pointers.size > 1) for (const pointer of pointers.values()) pointer.moved = true;
+        });
+        surface.addEventListener("pointermove", event => {
+            const pointer = pointers.get(event.pointerId);
+            if (!pointer) return;
+            const next = [event.clientX,event.clientY];
+            const delta = next.map((coordinate,i) => coordinate - pointer.last[i]);
+            if (Math.hypot(...next.map((coordinate,i) => coordinate - pointer.start[i])) > 5 && pointer.orbit) {
+                pointer.moved = true;
+                tapStart = null;
+            }
+            if (pointers.size === 1 && pointer.orbit && (pointer.moved || event.pointerType !== "touch")) {
+                orbit(...delta);
+            } else if (pointers.size === 2) {
+                const other = [...pointers.entries()].find(([id]) => id !== event.pointerId)[1].last;
+                const distance = point => Math.hypot(point[0]-other[0],point[1]-other[1]);
+                const before = distance(pointer.last);
+                if (before > 0) scaleBy(distance(next) / before);
+            }
+            pointer.last = next;
+        });
+        for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
+            surface.addEventListener(type, event => pointers.delete(event.pointerId));
+        surface.addEventListener("wheel", event => {
+            event.preventDefault();
+            scaleBy(Math.exp(-event.deltaY * 0.001));
+        }, { passive: false });
     }
-    canvas.addEventListener("wheel", event => {
-        event.preventDefault();
-        scaleBy(Math.exp(-event.deltaY * 0.001));
-    }, { passive: false });
     new ResizeObserver(redraw).observe(canvas);
     uploadPlate();
     refreshParts();

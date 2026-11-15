@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LayerCAD Web</title>
-<link rel="stylesheet" href="style.css?v=workspace-4">
+<link rel="stylesheet" href="style.css?v=workspace-5">
 <header><details><summary>File ▾</summary><div class="tool-popover"><button type="button" id="new-project">New project</button><label class="open">Open model<input id="file" type="file" accept=".layercad,.stl"></label><button id="save" type="button" disabled>Save project</button></div></details>
   <h1><img src="layercad.ico" width="36" height="36" alt="">LayerCAD</h1>
   <button id="export" type="button" disabled>Export STL</button>
@@ -47,11 +47,21 @@
     <div><button id="cancel-extrude" type="button">Cancel</button><button id="apply-extrude" type="submit">Apply</button></div>
   </form>
   <canvas id="view" aria-label="3D model viewport"></canvas>
+  <svg id="detail-overlay" aria-hidden="true"></svg>
+  <div id="plane-selector" hidden>
+    <svg id="plane-targets" aria-hidden="true"></svg>
+    <div role="group" aria-label="Sketch plane">
+      <button type="button" data-plane="XY">XY</button>
+      <button type="button" data-plane="XZ">XZ</button>
+      <button type="button" data-plane="YZ">YZ</button>
+      <button type="button" id="cancel-plane">Cancel</button>
+    </div>
+  </div>
   <section id="sketch" hidden>
-    <svg id="sketch-plane" viewBox="0 0 220 220" aria-label="XY sketch plane, 220 millimeters square">
+    <svg id="sketch-plane" aria-label="Sketch plane">
       <defs><pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 H 0 V 10" fill="none" stroke="#29415a" stroke-width=".4"/></pattern></defs>
       <g id="sketch-surface">
-      <rect width="220" height="220" fill="#1b2737"/>
+      <rect width="220" height="220" fill="#26394c" fill-opacity=".18"/>
       <rect width="220" height="220" fill="url(#grid)" stroke="#52677e" stroke-width=".45"/>
       <image id="reference-overlay" preserveAspectRatio="none" pointer-events="none"/>
       <path d="M110 0 V220" stroke="#4b8474" stroke-width=".45"/><path d="M0 110 H220" stroke="#8a6265" stroke-width=".45"/>
@@ -80,5 +90,5 @@
   </div>
   <p id="status" role="status">Open a model or start a new sketch.</p>
 </main>
-<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-4" defer></script>
+<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-5" defer></script>
 </html>
