@@ -123,3 +123,11 @@ main { border: 0; }
 .view-cube polygon { stroke: #8a9db5; stroke-width: 1; }
 .view-cube g:hover polygon, .view-cube g:focus-visible polygon { fill: #367778; }
 .view-cube text { fill: #e8f0f9; font-size: 9px; font-weight: 600; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+#build-extrude { position: absolute; z-index: 2; top: 96px; right: 12px; width: min(268px, calc(100% - 24px)); display: grid; gap: 8px; padding: 12px; background: #182537; border: 1px solid #465c74; border-radius: 8px; box-shadow: 0 8px 20px #0006; font-size: 13px; }
+#build-extrude p { margin: 0; }
+#build-extrude label { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+#build-extrude input, #build-extrude select { width: 95px; padding: 5px; color: inherit; background: #101a28; border: 1px solid #52647a; border-radius: 4px; }
+#build-extrude div { display: flex; justify-content: flex-end; gap: 6px; }
+#build-extrude button { min-height: 33px; padding: 4px 9px; }
+#extrude-error { color: #ffb2b2; }
+#extrude-error:empty { display: none; }
