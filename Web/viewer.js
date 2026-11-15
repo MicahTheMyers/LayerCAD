@@ -258,6 +258,7 @@ function startViewer() {
     const emptyProject = () => ({ Version: 11, Bed: { X: 220, Y: 220, Z: 250 }, Parts: [] });
     let project = emptyProject(), selected = -1, editing = -1;
     const undo = [], redo = [];
+    const collapsedGroups = new Set();
     const byId = id => document.getElementById(id);
     const save = document.querySelector("#save");
     let booleanEngine;
@@ -310,6 +311,8 @@ function startViewer() {
         document.querySelector("#export").disabled = !solids.length;
     }
     function uploadPlate() {
+        const bed = project.Bed ?? emptyProject().Bed;
+        byId("volume-label").textContent = `${bed.X} × ${bed.Y} × ${bed.Z} mm build volume`;
         const dimension = value => Number.isFinite(value) && value > 0 ? value : 220;
         const x = dimension(project.Bed?.X) / 2, y = dimension(project.Bed?.Y) / 2;
         if (!sceneTriangles.length) modelRadius = Math.hypot(x, y) * 0.8;
@@ -337,9 +340,13 @@ function startViewer() {
         const panel = byId("parts");
         panel.replaceChildren();
         for (const [title, sketches] of [["Objects", false], ["Sketches", true]]) {
-            const heading = document.createElement("h3");
-            heading.textContent = title;
-            panel.append(heading);
+            const section = document.createElement("details");
+            const heading = document.createElement("summary");
+            heading.textContent = `${title} ${project.Parts.filter(part => (part.Kind === "Sketch") === sketches).length}`;
+            section.open = !collapsedGroups.has(title);
+            section.ontoggle = () => section.open ? collapsedGroups.delete(title) : collapsedGroups.add(title);
+            section.append(heading);
+            panel.append(section);
             project.Parts.forEach((part, index) => {
                 if ((part.Kind === "Sketch") !== sketches) return;
                 const row = document.createElement("div");
@@ -354,7 +361,7 @@ function startViewer() {
                 visibility.onclick = () => changeParts(project.Parts.map((item, i) =>
                     i === index ? { ...item, Hidden: !item.Hidden } : item));
                 row.append(pick, visibility);
-                panel.append(row);
+                section.append(row);
             });
         }
         const part = project.Parts[selected];
@@ -392,10 +399,10 @@ function startViewer() {
         redraw();
         return result;
     }
-    function changeParts(parts, nextSelection = selected, minimumVersion = 11) {
+    function changeParts(parts, nextSelection = selected, minimumVersion = 11, bed = project.Bed) {
         const before = project;
         try {
-            loadScene({ ...project, Version: Math.max(minimumVersion, project.Version), Parts: parts });
+            loadScene({ ...project, Version: Math.max(minimumVersion, project.Version), Parts: parts, Bed: bed });
         } catch (error) {
             status.textContent = error.message;
             return false;
@@ -791,6 +798,25 @@ function startViewer() {
     };
     const editor = document.querySelector("#sketch");
     const plane = document.querySelector("#sketch-plane");
+    const sketchSurface = byId("sketch-surface");
+    let sketchRotation = 0, sketchTilt = 1, sketchOrbit = null;
+    function orientSketch(rotation = 0, tilt = 1) {
+        sketchRotation = rotation;
+        sketchTilt = tilt;
+        sketchSurface.setAttribute("transform", `translate(110 110) rotate(${rotation}) scale(1 ${tilt}) translate(-110 -110)`);
+    }
+    plane.addEventListener("pointerdown", event => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        sketchOrbit = event.pointerId;
+        plane.setPointerCapture(event.pointerId);
+    });
+    plane.addEventListener("pointermove", event => {
+        if (sketchOrbit !== event.pointerId) return;
+        orientSketch(sketchRotation + event.movementX * 0.4,
+            Math.max(0.15, Math.min(1, sketchTilt + event.movementY * 0.006)));
+    });
+    plane.addEventListener("lostpointercapture", () => { sketchOrbit = null; });
     const outline = document.querySelector("#outline");
     const preview = byId("sketch-preview");
     const vertices = document.querySelector("#vertices");
@@ -825,8 +851,9 @@ function startViewer() {
             shape.value = button.dataset.shape;
             shape.dispatchEvent(new Event("change"));
         }
-        button.closest("details").open = false;
     };
+    const twoPointShape = () => ["Rectangle", "Circle", "Triangle"].includes(shape.value);
+    const requiresBothAxes = () => ["Rectangle", "Triangle"].includes(shape.value);
     const undoPoint = document.querySelector("#undo-point");
     const referenceOverlay = byId("reference-overlay");
     let reference = null, referenceSequence = 0, calibration = null;
@@ -906,7 +933,7 @@ function startViewer() {
     };
     function drawSketch() {
         preview.removeAttribute("points");
-        const fixedShape = shape.value === "Rectangle" || shape.value === "Circle";
+        const fixedShape = twoPointShape();
         const profile = fixedShape && points.length === 2 ? shapeProfile(shape.value, points) : points;
         const open = shape.value === "Open path";
         outline.setAttribute("points", svgPoints(open ? [] : profile));
@@ -920,20 +947,24 @@ function startViewer() {
             vertices.append(dot);
         }
         undoPoint.disabled = !points.length || !!rules.length;
+        byId("redo-point").disabled = !redoPoints.length || !!rules.length;
         shape.disabled = !!rules.length;
         for (const button of shapeTools) {
             button.disabled = shape.disabled;
             button.setAttribute("aria-pressed", button.dataset.shape === shape.value);
         }
         const vertex = vertexPicker.value;
-        vertexPicker.replaceChildren(...points.map((_, i) => new Option(String(i + 1), String(i))));
+        vertexPicker.replaceChildren(...points.map(([x,y], i) => new Option(`${i + 1}   ${x}, ${y}`, String(i))));
         if (vertex && Number(vertex) < points.length) vertexPicker.value = vertex;
         rulePicker.disabled = !geometryEngine || shape.value !== "Polygon" || points.length < 3;
+        for (const id of ["move-vertex", "remove-vertex"]) byId(id).disabled = !points.length || !!rules.length;
+        byId("add-vertex").disabled = !!rules.length;
     }
     function showSketch(active) {
         ++referenceSequence;
         calibration = null;
         if (active) {
+            orientSketch();
             reference = project.Parts[editing]?.ReferenceImage ?? null;
             drawReference();
             const guide = faceSketch?.Guide ?? [];
@@ -943,11 +974,13 @@ function startViewer() {
         editor.hidden = !active;
         byId("build-tools").hidden = active;
         byId("sketch-tools").hidden = !active;
+        byId("vertices-panel").hidden = !active;
+        byId("parts-panel").hidden = active;
+        byId("volume-label").hidden = active;
         for (const detail of byId("sketch-tools").querySelectorAll("details")) detail.open = false;
         canvas.hidden = active;
         document.querySelector("#start-sketch").disabled = active;
-        document.querySelector("#fit").disabled = active;
-        byId("mode").textContent = active ? "Sketch Mode" : "Build Mode";
+        byId("mode").textContent = active ? "Sketch" : "Build Mode";
         byId("primitive").disabled = active;
         modeling.disabled = active || !geometryEngine;
         refreshParts();
@@ -989,24 +1022,25 @@ function startViewer() {
         status.textContent = {
             Polygon: "Tap the outline points in order. Extrude closes the outline.",
             Rectangle: "Tap two opposite corners of the rectangle.",
+            Triangle: "Tap opposite corners of the triangle's bounding box.",
             Circle: "Tap the center, then a point on the circle.",
             "Open path": "Tap the path points in order, then choose Finish sketch."
         }[shape.value];
     }
     const svgPoints = vertices => vertices.map(([x,y]) => `${x + 110},${110 - y}`).join(" ");
     function sketchPoint(event) {
-        const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(plane.getScreenCTM().inverse());
+        const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(sketchSurface.getScreenCTM().inverse());
         return [Math.round(point.x) - 110, 110 - Math.round(point.y)];
     }
     shape.addEventListener("change", () => { points.length = redoPoints.length = 0; drawSketch(); sketchHint(); });
     plane.addEventListener("pointermove", event => {
-        if (!event.isPrimary || !points.length || rules.length || calibration) return;
-        const next = sketchPoint(event), fixed = shape.value === "Rectangle" || shape.value === "Circle";
+        if (!event.isPrimary || sketchOrbit !== null || !points.length || rules.length || calibration) return;
+        const next = sketchPoint(event), fixed = twoPointShape();
         if (fixed && points.length !== 1) return;
         let draft;
         if (fixed) {
             const matchedAxes = next.filter((value, i) => value === points[0][i]).length;
-            if (matchedAxes >= (shape.value === "Rectangle" ? 1 : 2)) {
+            if (matchedAxes >= (requiresBothAxes() ? 1 : 2)) {
                 preview.removeAttribute("points");
                 return;
             }
@@ -1020,7 +1054,7 @@ function startViewer() {
     plane.addEventListener("pointerleave", drawSketch);
     plane.addEventListener("pointerup", event => {
         if (!event.isPrimary || event.button !== 0) return;
-        const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(plane.getScreenCTM().inverse());
+        const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(sketchSurface.getScreenCTM().inverse());
         if (calibration) {
             const x = point.x - 110, y = 110 - point.y;
             if (Math.abs(x - reference.X) > reference.Width / 2 || Math.abs(y - reference.Y) > reference.Height / 2) {
@@ -1044,16 +1078,46 @@ function startViewer() {
             return;
         }
         if (points.length >= 256 || rules.length) return;
-        const next = sketchPoint(event);
+        addSketchPoint(sketchPoint(event));
+    });
+    function addSketchPoint(next) {
         if (next.some(value => Math.abs(value) > 110)) return;
         const last = points.at(-1);
         if (last && next.every((value, i) => value === last[i])) return;
-        if (shape.value === "Rectangle" && points.length === 1 && next.some((value, i) => value === last[i])) return;
-        if ((shape.value === "Rectangle" || shape.value === "Circle") && points.length === 2) points.length = 0;
+        if (requiresBothAxes() && points.length === 1 && next.some((value, i) => value === last[i])) return;
+        if (twoPointShape() && points.length === 2) points.length = 0;
         redoPoints.length = 0;
         points.push(next);
         drawSketch();
-    });
+    }
+    const vertexInput = () => ["vertex-x", "vertex-y"].map(id => byId(id).valueAsNumber);
+    vertexPicker.onchange = () => {
+        const point = points[vertexPicker.selectedIndex];
+        if (point) [byId("vertex-x").value, byId("vertex-y").value] = point;
+    };
+    byId("add-vertex").onclick = () => {
+        const next = vertexInput();
+        if (points.length < 256 && next.every(Number.isFinite)) addSketchPoint(next);
+    };
+    byId("move-vertex").onclick = () => {
+        const i = vertexPicker.selectedIndex, next = vertexInput();
+        if (i < 0 || !next.every(value => Number.isFinite(value) && Math.abs(value) <= 110)) return;
+        if (twoPointShape() && points.length === 2 &&
+            next.filter((value, axis) => value === points[1-i][axis]).length >= (requiresBothAxes() ? 1 : 2)) return;
+        points[i] = next;
+        redoPoints.length = 0;
+        drawSketch();
+    };
+    byId("remove-vertex").onclick = () => {
+        if (vertexPicker.selectedIndex < 0) return;
+        points.splice(vertexPicker.selectedIndex, 1);
+        redoPoints.length = 0;
+        drawSketch();
+    };
+    byId("redo-point").onclick = () => {
+        if (redoPoints.length && !rules.length) points.push(redoPoints.pop());
+        drawSketch();
+    };
     undoPoint.addEventListener("click", () => {
         if (!points.length || rules.length) return;
         redoPoints.push(points.pop());
@@ -1065,10 +1129,8 @@ function startViewer() {
         let action;
         if (command && (key === "z" || key === "y")) {
             const forward = key === "y" || event.shiftKey;
-            action = editor.hidden ? () => byId(forward ? "redo" : "undo").click() : forward ? () => {
-                if (redoPoints.length && !rules.length) points.push(redoPoints.pop());
-                drawSketch();
-            } : () => undoPoint.click();
+            action = () => byId(editor.hidden ? (forward ? "redo" : "undo") :
+                (forward ? "redo-point" : "undo-point")).click();
         } else if (editor.hidden) {
             if (command && key === "e") action = () => byId("extrude-part").click();
             if (command && key === "b") action = () => byId("bevel").click();
@@ -1146,7 +1208,47 @@ function startViewer() {
         link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
     }
-    document.querySelector("#fit").addEventListener("click", fit);
+    byId("fit").onclick = () => editor.hidden ? fit() : orientSketch();
+    for (const button of document.querySelectorAll("[data-view]")) button.onclick = () => {
+        const view = button.dataset.view;
+        if (!editor.hidden) {
+            orientSketch(...({ top: [0,1], front: [0,0.35], right: [90,0.35] }[view]));
+            return;
+        }
+        [yaw, pitch] = { top: [0, Math.PI / 2], front: [0, 0], right: [Math.PI / 2, 0] }[view];
+        redraw();
+    };
+    byId("toggle-parts").onclick = event => {
+        const collapsed = byId("parts-panel").classList.toggle("collapsed");
+        event.currentTarget.textContent = collapsed ? "›" : "‹";
+        event.currentTarget.setAttribute("aria-expanded", !collapsed);
+        event.currentTarget.setAttribute("aria-label", collapsed ? "Expand Parts" : "Collapse Parts");
+    };
+    byId("new-project").onclick = event => {
+        if (project.Parts.length && !confirm("Start a new project? Save any changes you want to keep first.")) return;
+        ++loadSequence;
+        loadScene(emptyProject());
+        selected = editing = -1;
+        undo.length = redo.length = 0;
+        pickingFace = false;
+        showSketch(false);
+        fit();
+        event.currentTarget.closest("details").open = false;
+        status.textContent = "New project.";
+    };
+    byId("build-volume").onclick = event => {
+        const { X, Y, Z } = project.Bed ?? emptyProject().Bed;
+        const answer = prompt("Build volume X, Y, Z (mm)", `${X}, ${Y}, ${Z}`);
+        if (answer === null) return;
+        const dimensions = answer.split(",").map(Number);
+        if (dimensions.length !== 3 || !dimensions.every(value => value >= 1 && value <= 10000)) {
+            status.textContent = "Enter three dimensions between 1 and 10,000 mm.";
+            return;
+        }
+        const [x,y,z] = dimensions;
+        changeParts(project.Parts, selected, 11, { X: x, Y: y, Z: z });
+        event.currentTarget.closest("details").open = false;
+    };
     document.querySelector("#file").addEventListener("change", async event => {
         const file = event.target.files[0];
         if (!file) return;

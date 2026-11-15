@@ -65,3 +65,60 @@ aside { background: #192231; }
 }
 #build-tools { font-size: 13px; scrollbar-width: thin; }
 #build-tools button { padding-inline: 6px; }
+
+/* Desktop-style ribbon and viewport panels */
+header { margin: 4px 6px 0; gap: 8px; border-radius: 9px; background: #101c2b; padding: 4px 9px; }
+header h1 { font-size: 18px; }
+header #export, #finish-sketch { background: #1768bd; color: #fff; }
+header details { position: relative; z-index: 5; }
+header .settings .tool-popover { right: 0; }
+header summary { background: #253143; }
+.mode { border: 1px solid #3569a0; border-radius: 5px; background: #183b61; padding: 2px 7px; margin: 6px 8px 0; font-size: 11px; }
+nav { margin: 0 6px 6px; min-height: 57px; gap: 5px; }
+#build-tools, #sketch-tools { background: #101c2b; overflow: visible; position: relative; z-index: 3; flex-wrap: wrap; }
+.ribbon-group { display: grid; justify-items: center; gap: 1px; padding: 0 8px; border-right: 1px solid #344458; }
+.ribbon-group > span { font-size: 10px; text-transform: uppercase; }
+.ribbon-row { display: flex; align-items: center; gap: 3px; }
+.ribbon-row button, .ribbon-row summary { font-size: 12px; }
+.ribbon-icon { width: 35px; height: 34px; display: grid; place-items: center; padding: 4px !important; }
+.ribbon-icon svg { display: block; width: 23px; height: 23px; fill: #5489ae40; stroke: #a8d2ef; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+#sketch-tools .ribbon-icon svg { fill: none; }
+#sketch-tools .ribbon-icon[aria-pressed=true] { background: #245a59; }
+.tool-popover { text-align: left; }
+details summary { cursor: pointer; }
+header summary, #vertices-panel summary { list-style: none; padding: 7px 10px; border-radius: 5px; }
+header .settings summary { font-size: 21px; padding: 2px 7px; }
+main { border: 0; }
+#workspace { gap: 8px; padding: 2px 7px 6px; }
+#viewport { position: relative; overflow: hidden; }
+#parts-panel, #vertices-panel { flex: 0 0 clamp(156px, 12vw, 215px); border: 1px solid #29415a; border-radius: 9px; padding: 8px; background: #101c2b; }
+#parts-panel h2 { display: flex; align-items: center; justify-content: space-between; }
+#parts-panel h2 button { min-height: 25px; padding: 1px 8px; }
+#parts-panel.collapsed { flex-basis: 38px; padding: 3px; }
+#parts-panel.collapsed h2 { font-size: 0; }
+#parts-panel.collapsed #parts { display: none; }
+#parts { background: #131b27; border: 1px solid #29415a; min-height: min(55vh, 420px); }
+#parts summary { padding: 7px; font-size: 13px; background: #101c2b; font-weight: 600; }
+#vertices-panel { display: flex; flex-direction: column; gap: 6px; }
+#vertices-panel input, #vertices-panel select { width: 100%; background: #131b27; color: inherit; border: 1px solid #3b5069; padding: 5px; }
+#vertices-panel button, #vertices-panel summary { font-size: 12px; min-height: 29px; padding: 4px; background: #17283c; }
+#vertices-panel > select { flex: 1; min-height: 85px; }
+#vertices-panel label { font-size: 12px; }
+.vertex-coordinates { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+#view-controls, #volume-label { position: absolute; z-index: 1; top: 9px; }
+#volume-label { left: 8px; font-size: 11px; padding: 4px 7px; border: 1px solid #29415a; border-radius: 5px; background: #101c2b; }
+#view-controls { right: 9px; display: grid; justify-items: center; gap: 7px; }
+.view-cube { display: grid; grid-template-columns: 40px 18px; transform: skewY(4deg); }
+.view-cube button, #fit { padding: 2px 4px; min-height: 22px; border-radius: 2px; font-size: 10px; }
+.view-cube [data-view=top] { grid-column: span 2; background: #455873; }
+.view-cube [data-view=front] { height: 29px; background: #35455c; }
+.view-cube [data-view=right] { background: #27374e; font-size: 0; }
+.view-cube [data-view=right]::after { content: "R"; font-size: 10px; }
+#sketch { background: #0c1522; }
+#sketch-plane { max-width: 66%; align-self: center; }
+@media (max-width: 600px) {
+  #workspace { flex-direction: column; }
+  #parts-panel, #vertices-panel { flex-basis: auto; width: 100%; max-height: 23vh; }
+  #vertices-panel > select { min-height: 50px; }
+  #sketch-plane { max-width: 88%; }
+}

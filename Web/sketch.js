@@ -64,6 +64,7 @@ function shapeProfile(shape, points) {
     if (points.length !== 2) throw new Error("Place two points to define the shape.");
     const [[x,y],[u,v]] = points;
     if (shape === "Rectangle") return [[x,y],[u,y],[u,v],[x,v]];
+    if (shape === "Triangle") return [[x,y],[u,y],[(x+u)/2,v]];
     const radius = Math.hypot(u-x,v-y);
     return Array.from({ length: 96 }, (_, i) => {
         const angle = i * Math.PI / 48;
