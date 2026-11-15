@@ -154,3 +154,5 @@ main { border: 0; }
 #feature-form button { min-height: 33px; padding: 5px 9px; }
 #feature-error { margin: 0; color: #ffb2b2; }
 #feature-error:empty { display: none; }
+#sketch-drawings polygon, #sketch-drawings polyline { stroke: #74b9df; stroke-width: .6; fill: none; pointer-events: none; }
+#sketch-drawings polygon { fill: #1769c42a; }

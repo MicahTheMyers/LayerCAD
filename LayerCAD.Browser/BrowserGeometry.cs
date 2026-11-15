@@ -40,7 +40,7 @@ public static partial class BrowserGeometry
     }
 
     [JSExport]
-    public static string Bevel(string json, double amount)
+    public static string Bevel(string json, double amount, bool rounded)
     {
         var request = FeatureRequest(json);
         var part = request.Part;
@@ -93,7 +93,7 @@ public static partial class BrowserGeometry
         else throw new ArgumentException("Bevel supports box edges, convex sketch extrusions, and circular rims.");
 
         var cuts = (part.BevelCuts ?? []).ToDictionary(cut => cut.Target);
-        foreach (var target in targets) cuts[target] = new BoxBevelCut(target, amount);
+        foreach (var target in targets) cuts[target] = new BoxBevelCut(target, amount, Rounded: rounded);
         return FeatureResult(part with { Bevel = 0, BevelCuts = cuts.Values.ToArray() },
             "The bevel is too large or this geometry cannot be beveled.");
     }
