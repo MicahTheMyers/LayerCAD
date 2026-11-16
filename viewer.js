@@ -1995,6 +1995,28 @@ function startViewer() {
         const [a,b] = touches.map(pointer => pointer.last);
         return { center: a.map((value,i) => (value+b[i])/2), span: Math.hypot(...subtract(a,b)) };
     }
+    const scrollPreference = byId("viewport-scroll");
+    try {
+        const preference = localStorage.getItem("layercad.viewportScroll");
+        if (["pan","zoom"].includes(preference)) scrollPreference.value = preference;
+    } catch { /* Browser storage is optional. */ }
+    scrollPreference.onchange = () => {
+        try { localStorage.setItem("layercad.viewportScroll",scrollPreference.value); }
+        catch { /* The current session can still use the setting. */ }
+    };
+    function handleViewportScroll(event) {
+        event.preventDefault();
+        const mode = event.deltaMode;
+        const unit = mode === 1 ? 16 : mode === 2 ? canvas.clientHeight : 1;
+        const x = event.deltaX * unit, y = event.deltaY * unit;
+        // Browsers report trackpad scrolling and mouse wheel ticks through the same event.
+        const fineScroll = mode === 0 && (x !== 0 || Math.abs(y) < 40 || !Number.isInteger(y));
+        if (!event.ctrlKey && (scrollPreference.value === "pan" || scrollPreference.value === "auto" && fineScroll)) {
+            pan(-x,-y);
+        } else if (y) {
+            scaleBy(Math.exp(-y * 0.001));
+        }
+    }
     for (const surface of [canvas, plane]) {
         surface.addEventListener("pointerdown", event => {
             if (![0,1].includes(event.button)) return;
@@ -2037,11 +2059,10 @@ function startViewer() {
             surface.addEventListener(type, event => {
                 if (pointers.delete(event.pointerId)) touchGesture = null;
             });
-        surface.addEventListener("wheel", event => {
-            event.preventDefault();
-            scaleBy(Math.exp(-event.deltaY * 0.001));
-        }, { passive: false });
     }
+    byId("viewport").addEventListener("wheel", event => {
+        if (event.target.closest("#view, #sketch-plane, #plane-targets")) handleViewportScroll(event);
+    }, { passive: false });
     new ResizeObserver(redraw).observe(canvas);
     uploadPlate();
     refreshParts();
