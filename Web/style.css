@@ -156,3 +156,8 @@ main { border: 0; }
 #feature-error:empty { display: none; }
 #sketch-drawings polygon, #sketch-drawings polyline { stroke: #74b9df; stroke-width: .6; fill: none; pointer-events: none; }
 #sketch-drawings polygon { fill: #1769c42a; }
+#extrude-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#extrude-arrow { fill: none; stroke: #83ffc1; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
+#extrude-arrow.cut { stroke: #ff9298; }
+.drawing-row { display: block; width: calc(100% - 20px); margin: 2px 5px 2px 15px; text-align: left; min-height: 28px; padding: 3px 6px; background: transparent; border-color: transparent; font-size: 12px; }
+.drawing-row[aria-pressed=true] { background: #533b2b; border-color: #ce925d; }

@@ -54,11 +54,14 @@ function parseProject(project) {
     const triangles = [];
     const sketchTriangles = [];
     const starts = [];
+    const drawingRanges = [];
     const extrude = typeof module === "undefined" ? extrudeProfile : require("./sketch.js").extrudeProfile;
     const makeShape = typeof module === "undefined" ? shapeProfile : require("./sketch.js").shapeProfile;
     let skipped = 0;
     for (const part of project.Parts) {
         starts.push([triangles.length, sketchTriangles.length]);
+        const drawings = [];
+        drawingRanges.push(drawings);
         if (part.Hidden) continue;
         if (["Box", "Cylinder", "Tube"].includes(part.Kind) && !part.Holes && !part.Threads && !part.Bevel && !part.BevelCuts) {
             const count = 96;
@@ -92,11 +95,14 @@ function parseProject(project) {
         }
         if (part.Kind === "Sketch") {
             for (const profile of [part.Profile, ...(part.AdditionalProfiles ?? [])].filter(Boolean)) {
+                const start = sketchTriangles.length;
                 const caps = extrude(profile.map(({X,Y}) => [X,Y]), 1).slice(0, 2 * (profile.length - 2));
                 for (let i = 1; i < caps.length; i += 2)
                     sketchTriangles.push(caps[i].map(([x,y]) => modelPoint(part, [x,y,0.008])));
+                drawings.push([start, sketchTriangles.length]);
             }
             for (const path of part.OpenPaths ?? []) {
+                const start = sketchTriangles.length;
                 for (let i = 1; i < path.length; i++) {
                     const {X:x,Y:y} = path[i-1], {X:u,Y:v} = path[i];
                     const length = Math.hypot(u-x,v-y);
@@ -106,6 +112,7 @@ function parseProject(project) {
                         .map(([X,Y]) => modelPoint(part,[X,Y,0.008]));
                     sketchTriangles.push([p,q,r],[p,r,s]);
                 }
+                drawings.push([start, sketchTriangles.length]);
             }
             continue;
         }
@@ -140,7 +147,8 @@ function parseProject(project) {
         return solid < nextSolid ? [solid, nextSolid] :
             [triangles.length + sketch, triangles.length + nextSketch];
     });
-    return { triangles, sketchTriangles, ranges, skipped };
+    return { triangles, sketchTriangles, ranges, skipped,
+        drawings: drawingRanges.map(items => items.map(range => range.map(i => i + triangles.length))) };
 }
 
 if (typeof module !== "undefined") module.exports = { parseStl, parseProject };
@@ -177,7 +185,8 @@ function startViewer() {
         precision mediump float;
         varying float light;
         uniform vec3 tint;
-        void main() { gl_FragColor = vec4(tint * light, 1.0); }`);
+        uniform float opacity;
+        void main() { gl_FragColor = vec4(tint * light, opacity); }`);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
         status.textContent = "The browser could not initialize the 3D renderer.";
@@ -187,6 +196,7 @@ function startViewer() {
     gl.enable(gl.DEPTH_TEST);
     const buffer = gl.createBuffer();
     const plateBuffer = gl.createBuffer();
+    const previewBuffer = gl.createBuffer();
     const attributes = ["position", "normal"].map(name => gl.getAttribLocation(program, name));
     function bindGeometry(source) {
         gl.bindBuffer(gl.ARRAY_BUFFER, source);
@@ -199,8 +209,11 @@ function startViewer() {
     const camera = gl.getUniformLocation(program, "camera"), scale = gl.getUniformLocation(program, "scale");
     const cameraTarget = gl.getUniformLocation(program, "cameraTarget");
     const tint = gl.getUniformLocation(program, "tint");
+    const opacity = gl.getUniformLocation(program, "opacity");
     let solidVertexCount = 0;
     let sceneTriangles = [], partRanges = [];
+    let drawingRanges = [], selectedDrawing = -1;
+    let extrusionPreview = null;
     const pointers = new Map();
     let tapStart = null;
     let vertexCount = 0, yaw = -0.6, pitch = 0.5, zoom = 1, pending = false, loadSequence = 0;
@@ -250,7 +263,9 @@ function startViewer() {
         const frame = cameraFrame();
         gl.uniformMatrix3fv(camera, false, [0,1,2].flatMap(axis => frame.rows.map(row => row[axis])));
         gl.uniform3fv(cameraTarget, subtract(frame.target, modelCenter).map(value => value / modelRadius));
-        gl.uniform3f(scale, fit / width, fit / height, 0.9 / frame.depth);
+        gl.uniform3f(scale, fit / width, fit / height, 0.9 / Math.max(frame.depth,
+            extrusionPreview ? extrusionPreview.radius + Math.hypot(...subtract(frame.target,modelCenter))/modelRadius : 0));
+        gl.uniform1f(opacity, 1);
         if (!editor.hidden) positionSketch(frame, canvas.clientWidth, canvas.clientHeight);
         drawDetails(frame, canvas.clientWidth, canvas.clientHeight);
         bindGeometry(plateBuffer);
@@ -266,7 +281,9 @@ function startViewer() {
         gl.uniform3f(tint, 0.35, 0.67, 0.47);
         gl.drawArrays(gl.LINES, plateVertices - 2, 2);
         bindGeometry(buffer);
-        const [start, end] = ((selectedDetail ? null : partRanges[selected]) ?? [0, 0]).map(index => index * 3);
+        const range = selectedDrawing >= 0 ? drawingRanges[selected]?.[selectedDrawing] :
+            drawingRanges[selected]?.length > 1 ? null : partRanges[selected];
+        const [start, end] = ((selectedDetail ? null : range) ?? [0, 0]).map(index => index * 3);
         function drawRange(first, last, color) {
             gl.uniform3f(tint, ...color);
             gl.drawArrays(gl.TRIANGLES, first, last - first);
@@ -281,6 +298,20 @@ function startViewer() {
             if (from < to) drawRange(from, to, [1, 0.75, 0.53]);
             drawRange(to, last, color);
         }
+        if (extrusionPreview) {
+            bindGeometry(previewBuffer);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+            gl.depthMask(false);
+            if (extrusionPreview.cut) gl.disable(gl.DEPTH_TEST);
+            gl.uniform1f(opacity,0.32);
+            gl.uniform3fv(tint,extrusionPreview.color);
+            gl.drawArrays(gl.TRIANGLES,0,extrusionPreview.count);
+            if (extrusionPreview.cut) gl.enable(gl.DEPTH_TEST);
+            gl.depthMask(true);
+            gl.disable(gl.BLEND);
+        }
+        drawExtrudeArrow(frame,canvas.clientWidth,canvas.clientHeight);
     }
     function redraw() {
         if (!pending) {
@@ -321,7 +352,21 @@ function startViewer() {
     }).catch(() => {
         status.textContent = "The advanced geometry engine could not load. Basic editing is available.";
     });
-    function upload(solids, sketches = [], ranges = [[0, solids.length]]) {
+    function meshBuffer(triangles, center, radius) {
+        const data = new Float32Array(triangles.length * 18);
+        let offset = 0;
+        for (const [a,b,c] of triangles) {
+            const [x,y,z] = subtract(b,a), [u,v,w] = subtract(c,a);
+            const normal = [y*w-z*v,z*u-x*w,x*v-y*u];
+            const length = Math.hypot(...normal) || 1;
+            for (const point of [a,b,c]) {
+                for (let i = 0; i < 3; i++) data[offset++] = (point[i]-center[i])/radius;
+                for (const value of normal) data[offset++] = value/length;
+            }
+        }
+        return data;
+    }
+    function upload(solids, sketches = [], ranges = [[0, solids.length]], drawings = []) {
     const triangles = solids.concat(sketches);
     const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
     for (const triangle of triangles) for (const point of triangle) for (let i = 0; i < 3; i++) {
@@ -331,24 +376,15 @@ function startViewer() {
     }
     const center = min.map((value, i) => (value + max[i]) / 2);
     const radius = Math.max(0.001, Math.hypot(...max.map((value, i) => value - center[i])));
-    const data = new Float32Array(triangles.length * 18);
-    let offset = 0;
-    for (const [a,b,c] of triangles) {
-        const x = b[0]-a[0], y = b[1]-a[1], z = b[2]-a[2];
-        const u = c[0]-a[0], v = c[1]-a[1], w = c[2]-a[2];
-        const normal = [y*w-z*v, z*u-x*w, x*v-y*u];
-        const length = Math.hypot(...normal) || 1;
-        for (const point of [a,b,c]) {
-            for (let i=0;i<3;i++) data[offset++] = (point[i]-center[i])/radius;
-            for (const component of normal) data[offset++] = component/length;
-        }
-    }
+    const data = meshBuffer(triangles,center,radius);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
     if (gl.getError() !== gl.NO_ERROR) throw new Error("The model exceeds available graphics memory.");
     vertexCount = data.length / 6;
         sceneTriangles = triangles;
         partRanges = ranges;
+        drawingRanges = drawings;
+        selectedDrawing = -1;
         solidVertexCount = solids.length * 3;
         modelCenter = triangles.length ? center : [0,0,0];
         modelRadius = triangles.length ? radius : 1;
@@ -399,7 +435,7 @@ function startViewer() {
                 const pick = document.createElement("button");
                 pick.textContent = part.Name;
                 pick.setAttribute("aria-pressed", index === selected);
-                pick.onclick = () => { extrudeFace = selectedDetail = null; selected = index; refreshParts(); };
+                pick.onclick = () => selectPart(index);
                 const visibility = document.createElement("button");
                 visibility.textContent = part.Hidden ? "○" : "◉";
                 visibility.setAttribute("aria-label", (part.Hidden ? "Show " : "Hide ") + part.Name);
@@ -407,6 +443,17 @@ function startViewer() {
                     i === index ? { ...item, Hidden: !item.Hidden } : item));
                 row.append(pick, visibility);
                 section.append(row);
+                const count = sketchProfiles(part).length;
+                const paths = part.OpenPaths?.length ?? 0;
+                if (count + paths < 2) return;
+                for (let drawing = 0; drawing < count + paths; drawing++) {
+                    const item = document.createElement("button");
+                    item.className = "drawing-row";
+                    item.textContent = drawing < count ? `Profile ${drawing + 1}` : `Path ${drawing - count + 1}`;
+                    item.setAttribute("aria-pressed", index === selected && drawing === selectedDrawing);
+                    item.onclick = () => selectPart(index,drawing);
+                    section.append(item);
+                }
             });
         }
         const part = project.Parts[selected];
@@ -439,7 +486,7 @@ function startViewer() {
     }
     function loadScene(next) {
         const result = parseProject(next);
-        upload(result.triangles, result.sketchTriangles, result.ranges);
+        upload(result.triangles, result.sketchTriangles, result.ranges, result.drawings);
         project = next;
         extrudeFace = selectedDetail = null;
         uploadPlate();
@@ -494,14 +541,22 @@ function startViewer() {
         return mesh.map(([a,b,c]) => ({ A: point(a), B: point(reverse ? c : b), C: point(reverse ? b : c) }));
     }
     const meshVectors = triangles => triangles.map(({ A, B, C }) => [A, B, C].map(({ X,Y,Z }) => [X,Y,Z]));
-    function extrudeSketch(parts, sketchIndex, distance, operation, bodyIndex = -1) {
+    const sketchProfiles = part => [part?.Profile, ...(part?.AdditionalProfiles ?? [])].filter(Boolean);
+    function selectPart(index,drawing = -1) {
+        extrudeFace = selectedDetail = null;
+        selected = index;
+        selectedDrawing = drawing;
+        refreshParts();
+    }
+    function extrudeSketch(parts, sketchIndex, distance, operation, bodyIndex = -1, profileIndex = -1) {
         if (!["add", "cut", "merge"].includes(operation) || !Number.isFinite(distance) ||
             Math.abs(distance) < 0.01 || Math.abs(distance) > 10000)
             throw new Error("Choose Add, Cut, or Merge and a signed distance of 0.01–10,000 mm.");
         const source = parts[sketchIndex];
-        const profiles = [source.Profile, ...(source.AdditionalProfiles ?? [])].filter(Boolean);
+        const profiles = sketchProfiles(source);
         const link = source.SketchId ?? crypto.randomUUID();
-        const prisms = profiles.map((Profile, index) => {
+        const prisms = profiles.flatMap((Profile, index) => {
+            if (profileIndex >= 0 && index !== profileIndex) return [];
             const prism = { Kind: "Extrusion", Name: `Extrusion ${parts.length + index + 1}`,
                 X: source.X, Y: source.Y, Z: source.Z, Width: 0, Depth: 0, Height: Math.abs(distance),
                 Profile, SketchId: link, SketchProfileIndex: index, Plane: source.Plane, FaceFrame: source.FaceFrame };
@@ -510,7 +565,8 @@ function startViewer() {
             return meshBody(prism.Name, transformMesh(solidMesh({ ...prism, X,Y,Z }), point => point));
         });
         if (operation === "add") {
-            parts[sketchIndex] = { ...source, SketchId: link, Hidden: !source.OpenPaths?.length };
+            parts[sketchIndex] = { ...source, SketchId: link, Hidden: source.Hidden ||
+                (!source.OpenPaths?.length && (profileIndex < 0 || profiles.length === 1)) };
             if (bodyIndex >= 0) {
                 if (!booleanEngine) throw new Error("The solid modeling engine is still loading.");
                 const body = parts[bodyIndex];
@@ -868,12 +924,63 @@ function startViewer() {
     const extrudePanel = byId("build-extrude");
     let extrudeFace = null;
     const canExtrude = part => part?.Kind === "Sketch" && !!part.Profile;
-    function updateExtrudeTarget() {
+    function buildExtrudeSource() {
+        if (extrudeFace) return { part: extrudeFace, profileIndex: 0 };
         const part = project.Parts[selected];
-        const target = extrudeFace ? extrudeFace.Name : canExtrude(part) ? part.Name : "";
+        const count = sketchProfiles(part).length;
+        const profileIndex = selectedDrawing < 0 && count === 1 ? 0 : selectedDrawing;
+        return canExtrude(part) && profileIndex >= 0 && profileIndex < count ? { part, profileIndex } : null;
+    }
+    function updateExtrudePreview() {
+        extrusionPreview = null;
+        const distance = byId("build-extrude-distance").valueAsNumber;
+        const target = !extrudePanel.hidden && buildExtrudeSource();
+        if (target && Math.abs(distance) >= 0.01 && Math.abs(distance) <= 10000) {
+            const { part, profileIndex } = target;
+            const profile = sketchProfiles(part)[profileIndex].map(({X,Y}) => [X,Y]);
+            const triangles = extrudeProfile(profile,Math.abs(distance)).map(triangle =>
+                triangle.map(([x,y,z]) => modelPoint(part,[x,y,z + Math.min(0,distance)])));
+            let radius = 0;
+            for (const triangle of triangles) for (const point of triangle)
+                radius = Math.max(radius,Math.hypot(...subtract(point,modelCenter))/modelRadius);
+            const center = profile.reduce(([x,y],[u,v]) => [x+u/profile.length,y+v/profile.length],[0,0]);
+            const cut = byId("build-extrude-operation").value === "Cut";
+            gl.bindBuffer(gl.ARRAY_BUFFER,previewBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER,meshBuffer(triangles,modelCenter,modelRadius),gl.DYNAMIC_DRAW);
+            extrusionPreview = { count: triangles.length*3, radius,
+                origin: modelPoint(part,[...center,0]), end: modelPoint(part,[...center,distance]),
+                color: cut ? [1,0.32,0.36] : [0.28,0.95,0.56], cut };
+        }
+        redraw();
+    }
+    function drawExtrudeArrow(frame,width,height) {
+        const arrow = byId("extrude-arrow");
+        if (!extrusionPreview) {
+            arrow.removeAttribute("d");
+            return;
+        }
+        const project = screenProjector(frame,width,height);
+        const a = project(extrusionPreview.origin), b = project(extrusionPreview.end);
+        const [x,y] = subtract(b,a), length = Math.hypot(x,y);
+        arrow.classList.toggle("cut",extrusionPreview.cut);
+        if (length < 2) {
+            arrow.setAttribute("d",`M${b[0]-4},${b[1]} a4,4 0 1 0 8,0 a4,4 0 1 0 -8,0`);
+            return;
+        }
+        const u = x/length, v = y/length;
+        const tip = [b[0]+10*u,b[1]+10*v];
+        arrow.setAttribute("d",`M${a} L${tip} M${tip[0]-12*u-5*v},${tip[1]-12*v+5*u} L${tip} L${tip[0]-12*u+5*v},${tip[1]-12*v-5*u}`);
+    }
+    byId("build-extrude-distance").oninput = updateExtrudePreview;
+    byId("build-extrude-operation").onchange = updateExtrudePreview;
+    function updateExtrudeTarget() {
+        const source = buildExtrudeSource();
+        const target = source ? source.part.Name + (sketchProfiles(source.part).length > 1 ?
+            ` · Profile ${source.profileIndex + 1}` : "") : "";
         byId("extrude-part").setAttribute("aria-pressed", !extrudePanel.hidden);
-        byId("extrude-target").textContent = target || "Select a closed sketch or a planar face.";
+        byId("extrude-target").textContent = target || "Select a closed drawing or a planar face.";
         byId("apply-extrude").disabled = !target;
+        updateExtrudePreview();
     }
     function closeExtrude() {
         extrudePanel.hidden = true;
@@ -1038,14 +1145,15 @@ function startViewer() {
         try {
             const distance = byId("build-extrude-distance").valueAsNumber;
             const operation = byId("build-extrude-operation").value.toLowerCase();
-            const source = extrudeFace ?? project.Parts[selected];
-            if (!canExtrude(source)) throw new Error("Select a closed sketch or a planar face.");
+            const target = buildExtrudeSource();
+            if (!target) throw new Error("Select a closed drawing or a planar face.");
+            const { part: source, profileIndex } = target;
             const initial = [...project.Parts];
             const index = extrudeFace ? initial.push(source) - 1 : selected;
             const bodyIndex = extrudeFace && operation === "add" ? selected : -1;
             const extended = bodyIndex >= 0 ? extendRegularBody(initial[bodyIndex],source,distance) : null;
             if (extended) initial[bodyIndex] = extended;
-            let parts = extended ? initial : extrudeSketch(initial, index, distance, operation, bodyIndex);
+            let parts = extended ? initial : extrudeSketch(initial, index, distance, operation, bodyIndex, profileIndex);
             if (extrudeFace) {
                 parts = parts.filter(part => !(part.Kind === "Sketch" && part.SketchId === source.SketchId))
                     .map(part => part.SketchId === source.SketchId ? { ...part, SketchId: undefined } : part);
@@ -1692,7 +1800,7 @@ function startViewer() {
             const result = projectFile ? parseProject(opened) : parseStl(await file.arrayBuffer());
             if (sequence !== loadSequence) return;
             if (!projectFile && !result.triangles.length) throw new Error("This file has no triangles.");
-            upload(result.triangles, result.sketchTriangles, result.ranges);
+            upload(result.triangles, result.sketchTriangles, result.ranges, result.drawings);
             project = opened ?? { ...emptyProject(), Parts: [{ Kind: "Mesh", Name: file.name, Width: 0, Depth: 0, Height: 0, X: 0, Y: 0, Z: 0,
                 Mesh: { Triangles: result.triangles.map(([a,b,c]) => {
                     const point = ([X,Y,Z]) => ({X,Y,Z});
@@ -1735,7 +1843,9 @@ function startViewer() {
                     return [a * cy - b * sy, c * cp + depth * sp, depth * cp - c * sp];
                 };
                 let nearest = 1 / 0.9;
+                let nearestTriangle = -1;
                 selected = -1;
+                selectedDrawing = -1;
                 for (const [index, [start, end]] of partRanges.entries()) {
                     for (let i = start; i < end; i++) {
                         const [a,b,c] = sceneTriangles[i].map(projectPoint);
@@ -1748,8 +1858,12 @@ function startViewer() {
                         const depth = a[2] + u*(b[2]-a[2]) + v*(c[2]-a[2]);
                         if (depth >= nearest) continue;
                         nearest = depth;
+                        nearestTriangle = i;
                         selected = index;
                     }
+                }
+                if (selected >= 0) {
+                    selectedDrawing = drawingRanges[selected]?.findIndex(([start,end]) => nearestTriangle >= start && nearestTriangle < end) ?? -1;
                 }
                 refreshParts();
                 if (selected < 0 || project.Parts[selected].Kind === "Sketch") return;
