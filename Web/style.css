@@ -171,3 +171,7 @@ main { border: 0; }
 #build-extrude { max-height: 100%; overflow: auto; }
 .scroll-setting { display: grid; gap: 4px; padding: 4px 8px; font-size: 13px; }
 .scroll-setting select { color: inherit; background: #182432; border: 1px solid #52647a; border-radius: 4px; padding: 5px; }
+#feature-dialog.hole-placement { z-index: 8; }
+#hole-handle { pointer-events: auto; cursor: grab; touch-action: none; fill: #fa5255a8; stroke: #ffd1d3; stroke-width: 2; }
+#hole-handle:active { cursor: grabbing; }
+#hole-hint { margin: 0; color: #b8cde6; }
