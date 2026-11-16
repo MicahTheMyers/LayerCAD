@@ -1349,6 +1349,8 @@ function startViewer() {
     const redoPoints = [];
     const drawings = [];
     let activeDrawing = -1;
+    const drawingCenters = byId("drawing-centers");
+    let drawingDrag = null, drawingMove = null;
     let rules = [];
     const rulePicker = byId("constraint-rule");
     const vertexPicker = byId("constraint-vertex");
@@ -1356,7 +1358,7 @@ function startViewer() {
         const rule = rulePicker.value;
         rulePicker.value = "";
         if (!rule) return;
-        if (rule === "clear") { rules = []; drawSketch(); return; }
+        if (rule === "clear") { rules = []; drawingMove = null; drawSketch(); return; }
         const Vertex = Number(vertexPicker.value), Kind = Number(rule);
         if (rules.some(item => item.Vertex === Vertex && item.Kind === Kind)) return;
         try {
@@ -1365,6 +1367,7 @@ function startViewer() {
                 Points: points.map(([X,Y]) => ({ X,Y })), Rules: next, Preferred: Vertex
             })));
             points.splice(0, points.length, ...solved.map(({X,Y}) => [X,Y]));
+            drawingMove = null;
             redoPoints.length = 0;
             rules = next;
             drawSketch();
@@ -1397,6 +1400,7 @@ function startViewer() {
         return result;
     }
     function activateDrawing(index, tool = shape.value) {
+        drawingMove = null;
         activeDrawing = index;
         const drawing = drawings[index];
         shape.value = drawing?.shape ?? tool;
@@ -1499,6 +1503,89 @@ function startViewer() {
         reference = calibration = null;
         drawReference();
     };
+    function addDrawingCenter(profile, open, index) {
+        if (profile.length < (open ? 2 : 3)) return;
+        let x = 0, y = 0, weight = 0;
+        for (let i = 0; i < profile.length - (open ? 1 : 0); i++) {
+            const [a,b] = profile[i], [c,d] = profile[(i+1)%profile.length];
+            const w = open ? Math.hypot(c-a,d-b) : a*d-c*b;
+            x += (a+c)*w;
+            y += (b+d)*w;
+            weight += w;
+        }
+        if (Math.abs(weight) < 1e-9) return;
+        const divisor = (open ? 2 : 3)*weight;
+        const marker = document.createElementNS("http://www.w3.org/2000/svg","circle");
+        marker.dataset.drawing = index;
+        marker.setAttribute("cx",110+x/divisor);
+        marker.setAttribute("cy",110-y/divisor);
+        marker.setAttribute("r",3.4);
+        const title = document.createElementNS("http://www.w3.org/2000/svg","title");
+        title.textContent = "Hold to move drawing";
+        marker.append(title);
+        drawingCenters.append(marker);
+    }
+    function drawingPoints(index) {
+        return index === activeDrawing ? points : drawings[index].points;
+    }
+    function setDrawingPoints(index, next) {
+        if (index === activeDrawing) {
+            points.splice(0,points.length,...next);
+        } else {
+            const drawing = drawings[index];
+            const [dx,dy] = subtract(next[0],drawing.points[0]);
+            drawings[index] = { ...drawing, points: next,
+                outline: drawing.outline.map(({X,Y}) => ({ X:X+dx,Y:Y+dy })) };
+        }
+    }
+    drawingCenters.addEventListener("pointerdown",event => {
+        const marker = event.target.closest("[data-drawing]");
+        if (!marker || !event.isPrimary || event.button !== 0 || calibration) return;
+        event.stopPropagation();
+        event.preventDefault();
+        const index = Number(marker.dataset.drawing);
+        const constraints = index === activeDrawing ? rules : drawings[index].rules;
+        if (constraints.some(rule => Number(rule.Kind) === 2)) {
+            status.textContent = "Clear the drawing's origin constraint to move it.";
+            return;
+        }
+        drawingDrag = { id:event.pointerId, index, readyAt:performance.now()+250,
+            start:[event.clientX,event.clientY], position:sketchPoint(event), before:drawingPoints(index).slice(), moving:false };
+        drawingCenters.setPointerCapture(event.pointerId);
+    });
+    drawingCenters.addEventListener("pointermove",event => {
+        if (event.pointerId !== drawingDrag?.id) return;
+        event.stopPropagation();
+        if (!(event.buttons & 1)) return;
+        if (!drawingDrag.moving && performance.now() < drawingDrag.readyAt) {
+            if (Math.hypot(event.clientX-drawingDrag.start[0],event.clientY-drawingDrag.start[1]) > 7)
+                drawingDrag = null;
+            return;
+        }
+        drawingDrag.moving = true;
+        const [dx,dy] = subtract(sketchPoint(event),drawingDrag.position);
+        setDrawingPoints(drawingDrag.index,drawingDrag.before.map(([x,y]) => [x+dx,y+dy]));
+        drawSketch();
+    });
+    drawingCenters.addEventListener("pointerup",event => {
+        if (calibration) return;
+        event.stopPropagation();
+        if (event.pointerId !== drawingDrag?.id) return;
+        const { index,before,moving } = drawingDrag;
+        if (moving) {
+            drawingMove = { index,before,after:drawingPoints(index).slice(),undone:false };
+            redoPoints.length = 0;
+        }
+        drawingDrag = null;
+        drawSketch();
+    });
+    for (const event of ["pointercancel","lostpointercapture"]) drawingCenters.addEventListener(event,() => {
+        if (drawingDrag?.moving) {
+            setDrawingPoints(drawingDrag.index,drawingDrag.before);
+            drawSketch();
+        }
+        drawingDrag = null;
+    });
     function drawSketch() {
         preview.removeAttribute("points");
         const fixedShape = twoPointShape();
@@ -1508,12 +1595,15 @@ function startViewer() {
         if (open) preview.setAttribute("points", svgPoints(profile));
         const drawingGroup = byId("sketch-drawings");
         drawingGroup.replaceChildren();
+        drawingCenters.replaceChildren();
         drawings.forEach((drawing,index) => {
             if (index === activeDrawing) return;
             const element = document.createElementNS("http://www.w3.org/2000/svg", drawing.open ? "polyline" : "polygon");
             element.setAttribute("points",svgPoints(drawing.outline.map(({X,Y}) => [X,Y])));
             drawingGroup.append(element);
+            addDrawingCenter(drawing.outline.map(({X,Y}) => [X,Y]),drawing.open,index);
         });
+        addDrawingCenter(profile,open,activeDrawing);
         drawingChoice.replaceChildren(...drawings.map((drawing,index) =>
             new Option(`${index + 1}. ${drawing.shape}`,String(index))), new Option("New drawing","-1"));
         drawingChoice.value = String(activeDrawing);
@@ -1526,8 +1616,8 @@ function startViewer() {
             dot.setAttribute("r", 1.4);
             vertices.append(dot);
         }
-        undoPoint.disabled = !points.length || !!rules.length;
-        byId("redo-point").disabled = !redoPoints.length || !!rules.length;
+        undoPoint.disabled = !(drawingMove && !drawingMove.undone) && (!points.length || !!rules.length);
+        byId("redo-point").disabled = !drawingMove?.undone && (!redoPoints.length || !!rules.length);
         shape.disabled = !!rules.length;
         for (const button of shapeTools) {
             button.setAttribute("aria-pressed", button.dataset.shape === shape.value);
@@ -1589,6 +1679,7 @@ function startViewer() {
         byId("plane-choice").value = sketchPlane;
         byId("plane-offset").value = 0;
         drawings.length = 0;
+        drawingMove = null;
         activeDrawing = -1;
         points.length = redoPoints.length = 0;
         drawSketch();
@@ -1706,6 +1797,7 @@ function startViewer() {
             return;
         }
         redoPoints.length = 0;
+        drawingMove = null;
         points.push(next);
         drawSketch();
     }
@@ -1724,21 +1816,33 @@ function startViewer() {
         if (twoPointShape() && points.length === 2 &&
             next.filter((value, axis) => value === points[1-i][axis]).length >= (requiresBothAxes() ? 1 : 2)) return;
         points[i] = next;
+        drawingMove = null;
         redoPoints.length = 0;
         drawSketch();
     };
     byId("remove-vertex").onclick = () => {
         if (vertexPicker.selectedIndex < 0) return;
         points.splice(vertexPicker.selectedIndex, 1);
+        drawingMove = null;
         redoPoints.length = 0;
         drawSketch();
     };
     byId("redo-point").onclick = () => {
-        if (redoPoints.length && !rules.length) points.push(redoPoints.pop());
+        if (drawingMove?.undone) {
+            setDrawingPoints(drawingMove.index,drawingMove.after);
+            drawingMove.undone = false;
+        } else if (redoPoints.length && !rules.length) points.push(redoPoints.pop());
         drawSketch();
     };
     undoPoint.addEventListener("click", () => {
+        if (drawingMove && !drawingMove.undone) {
+            setDrawingPoints(drawingMove.index,drawingMove.before);
+            drawingMove.undone = true;
+            drawSketch();
+            return;
+        }
         if (!points.length || rules.length) return;
+        drawingMove = null;
         redoPoints.push(points.pop());
         drawSketch();
     });
