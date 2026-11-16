@@ -797,14 +797,22 @@ function startViewer() {
     }
     featureMetric.oninput = customThread;
     let activeFeature = null;
+    const holeHandle = byId("hole-handle");
+    let holeDrag = null;
+    const worldPoint = ({ X,Y,Z }) => [X,Y,Z];
+    function holeOpen() {
+        return featureDialog.open && activeFeature?.tool === "hole";
+    }
     function openFeature(tool) {
         const part = project.Parts[selected];
         if (!part) return;
         const detail = selectedDetail;
         if (tool === "hole" && !detail?.face) {
-            status.textContent = "Click a flat face where you want the hole, then choose Hole.";
+            status.textContent = "Select a flat face, then choose Hole.";
             return;
         }
+        if (featureDialog.open) featureDialog.close();
+        closeExtrude();
         const thread = tool === "thread";
         const labels = { bevel: "Size (mm)", hole: "Diameter (mm)", thread: "Length (mm, 0 for auto)" };
         const names = { bevel: "Bevel", hole: "Hole", thread: "Thread" };
@@ -812,6 +820,8 @@ function startViewer() {
         byId("feature-amount-label").firstElementChild.textContent = labels[tool];
         featureAmount.value = { bevel: 2, hole: 5, thread: 0 }[tool];
         byId("feature-error").textContent = "";
+        byId("apply-feature").disabled = false;
+        byId("hole-hint").hidden = tool !== "hole";
         byId("feature-surface-label").hidden = byId("feature-metric-label").hidden = !thread;
         byId("feature-bevel-style-label").hidden = tool !== "bevel";
         byId("feature-bevel-style").value = "Flat";
@@ -824,7 +834,7 @@ function startViewer() {
             if (part.Kind === "Tube") surfaces.push(new Option("Tube bore", -2));
             featureSurface.replaceChildren(...surfaces);
         }
-        const point = tool === "hole" ? detail.face.Point : detail?.point ??
+        const point = tool === "hole" ? detail.face.Center : detail?.point ??
             (detail?.kind === "Edge" ? detail.edges[0][0].map((value,i) => (value+detail.edges[0][1][i])/2) : null);
         const asPoint = ([X,Y,Z]) => ({ X,Y,Z });
         activeFeature = { tool, part, index: selected, request: {
@@ -832,12 +842,20 @@ function startViewer() {
             Point: Array.isArray(point) ? asPoint(point) : point
         }};
         featureDialog.classList.toggle("with-preview", !thread);
-        featureDialog.showModal();
+        featureDialog.classList.toggle("hole-placement",tool === "hole");
+        if (tool === "hole") featureDialog.show();
+        else featureDialog.showModal();
         featureAmount.select();
-        updateFeaturePreview();
+        if (!updateFeaturePreview() && tool === "hole") {
+            activeFeature.request.Point = detail.face.Point;
+            if (!updateFeaturePreview()) {
+                activeFeature.request.Point = detail.face.Center;
+                updateFeaturePreview();
+            }
+        }
     }
     function updateFeaturePreview() {
-        if (!featureDialog.open || activeFeature?.tool === "thread") return;
+        if (!featureDialog.open || activeFeature?.tool === "thread") return true;
         const errorText = byId("feature-error");
         errorText.textContent = "";
         extrusionPreview = null;
@@ -849,17 +867,51 @@ function startViewer() {
                 const data = JSON.parse(tool === "bevel" ?
                     geometryEngine.bevelPreview(json, amount, byId("feature-bevel-style").value === "Rounded") :
                     geometryEngine.holePreview(json, amount));
-                const point = ({ X,Y,Z }) => [X,Y,Z];
-                setToolPreview(meshVectors(data.Region), point(data.Origin), point(data.End), true);
+                setToolPreview(meshVectors(data.Region), worldPoint(data.Origin), worldPoint(data.End), true);
             }
         } catch (error) {
             errorText.textContent = error.message;
         }
+        byId("apply-feature").disabled = !extrusionPreview;
         redraw();
+        return !!extrusionPreview;
     }
     featureAmount.oninput = updateFeaturePreview;
     byId("feature-bevel-style").onchange = updateFeaturePreview;
-    featureDialog.onclose = () => { activeFeature = null; updateExtrudePreview(); };
+    featureDialog.onclose = () => {
+        if (featureDialog.open) return;
+        activeFeature = holeDrag = null;
+        updateExtrudePreview();
+    };
+    holeHandle.addEventListener("pointerdown", event => {
+        if (!holeOpen() || !event.isPrimary || event.button !== 0) return;
+        const bounds = canvas.getBoundingClientRect();
+        holeDrag = { id: event.pointerId, x: event.clientX-bounds.left-Number(holeHandle.getAttribute("cx")),
+            y: event.clientY-bounds.top-Number(holeHandle.getAttribute("cy")) };
+        holeHandle.setPointerCapture(event.pointerId);
+        event.preventDefault();
+    });
+    holeHandle.addEventListener("pointermove", event => {
+        if (!holeOpen() || event.pointerId !== holeDrag?.id) return;
+        const bounds = canvas.getBoundingClientRect();
+        const frame = cameraFrame();
+        const [right,up,depth] = frame.rows;
+        const scale = viewportScale(bounds.width,bounds.height)/(2*modelRadius);
+        if (!scale) return;
+        const x = (event.clientX-bounds.left-holeDrag.x-bounds.width/2)/scale;
+        const y = (bounds.height/2-event.clientY+bounds.top+holeDrag.y)/scale;
+        const point = frame.target.map((value,i) => value+x*right[i]+y*up[i]);
+        const request = activeFeature.request;
+        const u = worldPoint(request.Frame.Horizontal), v = worldPoint(request.Frame.Vertical);
+        const normal = [u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+        const denominator = dot(normal,depth);
+        if (Math.abs(denominator) < 0.02) return;
+        const distance = dot(normal,subtract(worldPoint(request.Point),point))/denominator;
+        const [X,Y,Z] = point.map((value,i) => value+distance*depth[i]);
+        request.Point = { X,Y,Z };
+        updateFeaturePreview();
+    });
+    holeHandle.addEventListener("lostpointercapture", () => { holeDrag = null; });
     for (const tool of ["bevel","hole","thread"]) byId(tool).onclick = () => openFeature(tool);
     byId("cancel-feature").onclick = () => featureDialog.close();
     byId("feature-form").onsubmit = event => {
@@ -1009,6 +1061,7 @@ function startViewer() {
         return canExtrude(part) && profileIndex >= 0 && profileIndex < count ? { part, profileIndex } : null;
     }
     function updateExtrudePreview() {
+        if (holeOpen()) return;
         extrusionPreview = null;
         const distance = byId("build-extrude-distance").valueAsNumber;
         const target = !extrudePanel.hidden && buildExtrudeSource();
@@ -1034,11 +1087,17 @@ function startViewer() {
     }
     function drawExtrudeArrow(frame,width,height) {
         const arrow = byId("extrude-arrow");
+        const project = screenProjector(frame,width,height);
+        holeHandle.toggleAttribute("hidden",!holeOpen());
+        if (holeOpen()) {
+            const [x,y] = project(worldPoint(activeFeature.request.Point));
+            holeHandle.setAttribute("cx",x);
+            holeHandle.setAttribute("cy",y);
+        }
         if (!extrusionPreview) {
             arrow.removeAttribute("d");
             return;
         }
-        const project = screenProjector(frame,width,height);
         const a = project(extrusionPreview.origin), b = project(extrusionPreview.end);
         const [x,y] = subtract(b,a), length = Math.hypot(x,y);
         arrow.classList.toggle("cut",extrusionPreview.cut);
@@ -1205,6 +1264,7 @@ function startViewer() {
         overlay.append(path);
     }
     byId("extrude-part").onclick = () => {
+        if (holeOpen()) featureDialog.close();
         if (!extrudePanel.hidden) { closeExtrude(); return; }
         pickingFace = false;
         extrudePanel.hidden = false;
@@ -1470,6 +1530,7 @@ function startViewer() {
         byId("add-vertex").disabled = !!rules.length;
     }
     function showSketch(active) {
+        if (holeOpen()) featureDialog.close();
         chooseSketchPlane(false);
         ++referenceSequence;
         calibration = null;
@@ -1680,6 +1741,7 @@ function startViewer() {
             action = () => byId(editor.hidden ? (forward ? "redo" : "undo") :
                 (forward ? "redo-point" : "undo-point")).click();
         } else if (editor.hidden) {
+            if (key === "escape" && holeOpen()) action = () => featureDialog.close();
             if (key === "escape" && choosingSketchPlane) action = () => byId("cancel-plane").click();
             if (key === "escape" && !extrudePanel.hidden) action = closeExtrude;
             if (command && key === "e") action = () => byId("extrude-part").click();
