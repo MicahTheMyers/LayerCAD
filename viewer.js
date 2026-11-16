@@ -2250,6 +2250,11 @@ function startViewer() {
     byId("viewport").addEventListener("wheel", event => {
         if (event.target.closest("#view, #sketch-plane, #plane-targets")) handleViewportScroll(event);
     }, { passive: false });
+    document.addEventListener("contextmenu", event => {
+        if (event.target.closest("#drawing-centers, #hole-handle, .popup-title") ||
+            event.pointerType === "touch" && event.target.closest("#view, #sketch-plane"))
+            event.preventDefault();
+    });
     new ResizeObserver(redraw).observe(canvas);
     uploadPlate();
     refreshParts();
