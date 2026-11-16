@@ -345,7 +345,7 @@ function startViewer() {
         status.textContent = "The solid boolean engine could not load.";
     });
     const modeling = byId("model-tool");
-    const engineReady = import("./engine/engine.js?v=features-2").then(engine => {
+    const engineReady = import("./engine/engine.js?v=features-3").then(engine => {
         geometryEngine = engine;
         modeling.disabled = !editor.hidden;
         refreshParts();
@@ -781,9 +781,35 @@ function startViewer() {
             Part: part, Kind: detail?.kind, Frame: detail?.face.Frame,
             Point: Array.isArray(point) ? asPoint(point) : point
         }};
+        featureDialog.classList.toggle("with-preview", !thread);
         featureDialog.showModal();
         featureAmount.select();
+        updateFeaturePreview();
     }
+    function updateFeaturePreview() {
+        if (!featureDialog.open || activeFeature?.tool === "thread") return;
+        const errorText = byId("feature-error");
+        errorText.textContent = "";
+        extrusionPreview = null;
+        try {
+            const { tool, request } = activeFeature;
+            const amount = featureAmount.valueAsNumber;
+            if (Number.isFinite(amount) && amount > 0) {
+                const json = JSON.stringify(request);
+                const data = JSON.parse(tool === "bevel" ?
+                    geometryEngine.bevelPreview(json, amount, byId("feature-bevel-style").value === "Rounded") :
+                    geometryEngine.holePreview(json, amount));
+                const point = ({ X,Y,Z }) => [X,Y,Z];
+                setToolPreview(meshVectors(data.Region), point(data.Origin), point(data.End), true);
+            }
+        } catch (error) {
+            errorText.textContent = error.message;
+        }
+        redraw();
+    }
+    featureAmount.oninput = updateFeaturePreview;
+    byId("feature-bevel-style").onchange = updateFeaturePreview;
+    featureDialog.onclose = () => { activeFeature = null; updateExtrudePreview(); };
     for (const tool of ["bevel","hole","thread"]) byId(tool).onclick = () => openFeature(tool);
     byId("cancel-feature").onclick = () => featureDialog.close();
     byId("feature-form").onsubmit = event => {
@@ -940,18 +966,20 @@ function startViewer() {
             const profile = sketchProfiles(part)[profileIndex].map(({X,Y}) => [X,Y]);
             const triangles = extrudeProfile(profile,Math.abs(distance)).map(triangle =>
                 triangle.map(([x,y,z]) => modelPoint(part,[x,y,z + Math.min(0,distance)])));
-            let radius = 0;
-            for (const triangle of triangles) for (const point of triangle)
-                radius = Math.max(radius,Math.hypot(...subtract(point,modelCenter))/modelRadius);
             const center = profile.reduce(([x,y],[u,v]) => [x+u/profile.length,y+v/profile.length],[0,0]);
-            const cut = byId("build-extrude-operation").value === "Cut";
-            gl.bindBuffer(gl.ARRAY_BUFFER,previewBuffer);
-            gl.bufferData(gl.ARRAY_BUFFER,meshBuffer(triangles,modelCenter,modelRadius),gl.DYNAMIC_DRAW);
-            extrusionPreview = { count: triangles.length*3, radius,
-                origin: modelPoint(part,[...center,0]), end: modelPoint(part,[...center,distance]),
-                color: cut ? [1,0.32,0.36] : [0.28,0.95,0.56], cut };
+            setToolPreview(triangles, modelPoint(part,[...center,0]), modelPoint(part,[...center,distance]),
+                byId("build-extrude-operation").value === "Cut");
         }
         redraw();
+    }
+    function setToolPreview(triangles, origin, end, cut) {
+        let radius = 0;
+        for (const triangle of triangles) for (const point of triangle)
+            radius = Math.max(radius,Math.hypot(...subtract(point,modelCenter))/modelRadius);
+        gl.bindBuffer(gl.ARRAY_BUFFER,previewBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER,meshBuffer(triangles,modelCenter,modelRadius),gl.DYNAMIC_DRAW);
+        extrusionPreview = { count: triangles.length*3, radius, origin, end,
+            color: cut ? [1,0.32,0.36] : [0.28,0.95,0.56], cut };
     }
     function drawExtrudeArrow(frame,width,height) {
         const arrow = byId("extrude-arrow");
@@ -968,7 +996,7 @@ function startViewer() {
             return;
         }
         const u = x/length, v = y/length;
-        const tip = [b[0]+10*u,b[1]+10*v];
+        const tip = [a[0]+Math.max(25,length+10)*u,a[1]+Math.max(25,length+10)*v];
         arrow.setAttribute("d",`M${a} L${tip} M${tip[0]-12*u-5*v},${tip[1]-12*v+5*u} L${tip} L${tip[0]-12*u+5*v},${tip[1]-12*v-5*u}`);
     }
     byId("build-extrude-distance").oninput = updateExtrudePreview;
