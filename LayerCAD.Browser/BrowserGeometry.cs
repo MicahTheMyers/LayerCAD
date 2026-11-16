@@ -40,9 +40,11 @@ public static partial class BrowserGeometry
     }
 
     [JSExport]
-    public static string Bevel(string json, double amount, bool rounded)
+    public static string Bevel(string json, double amount, bool rounded) =>
+        JsonSerializer.Serialize(BeveledPart(FeatureRequest(json), amount, rounded).Part, BrowserJson.Default.Part);
+
+    private static (Part Part, BoxBevelTarget[] Targets) BeveledPart(FeaturePickRequest request, double amount, bool rounded)
     {
-        var request = FeatureRequest(json);
         var part = request.Part;
         var normal = request.Frame?.Normal ?? new Vector3D(0, 0, 1);
         IEnumerable<BoxBevelTarget> targets;
@@ -93,13 +95,90 @@ public static partial class BrowserGeometry
         else throw new ArgumentException("Bevel supports box edges, convex sketch extrusions, and circular rims.");
 
         var cuts = (part.BevelCuts ?? []).ToDictionary(cut => cut.Target);
-        foreach (var target in targets) cuts[target] = new BoxBevelCut(target, amount, Rounded: rounded);
-        return FeatureResult(part with { Bevel = 0, BevelCuts = cuts.Values.ToArray() },
-            "The bevel is too large or this geometry cannot be beveled.");
+        var selected = targets.ToArray();
+        foreach (var target in selected) cuts[target] = new BoxBevelCut(target, amount, Rounded: rounded);
+        var result = part with { Bevel = 0, BevelCuts = cuts.Values.ToArray() };
+        if (!result.IsValid()) throw new ArgumentException("The bevel is too large or this geometry cannot be beveled.");
+        return (result, selected);
     }
 
     [JSExport]
-    public static string Hole(string json, double diameter)
+    public static string BevelPreview(string json, double amount, bool rounded)
+    {
+        var request = FeatureRequest(json);
+        var (result, targets) = BeveledPart(request, amount, rounded);
+        var handle = targets[0];
+        var cut = result.BevelCuts!.First(item => item.Target == handle);
+        Point3D origin;
+        Vector3D direction;
+        double length;
+        Func<Triangle, bool> highlight;
+        if (PolygonBevel.Create(result) is { } polygon)
+        {
+            (origin, direction, length) = polygon.Arrow(cut);
+            highlight = polygon.Highlight(result.BevelCuts!.Where(item => targets.Contains(item.Target)));
+        }
+        else if (RoundBevel.Surface(request.Part) is { } round)
+        {
+            var offset = new Vector3D(result.X, result.Y, result.Z);
+            var center = round.Prism.Vertex(round.Center, handle.Z > 0 ? round.High : round.Low, offset);
+            var axis = round.Prism.Frame.Normal;
+            var radial = (request.Point ?? center) - center;
+            radial -= axis * Vector3D.DotProduct(radial, axis);
+            if (radial.LengthSquared < 1e-8) radial = round.Prism.Frame.Horizontal.Vector;
+            radial.Normalize();
+            origin = center + radial * round.Radius;
+            direction = -(radial + axis * handle.Z);
+            length = amount / direction.Length;
+            direction.Normalize();
+            highlight = triangle =>
+            {
+                double axial = Vector3D.DotProduct(TriangleNormal(triangle), axis);
+                return Math.Abs(axial) is > 1e-6 and < 0.999999 && targets.Contains(RoundBevel.Rim(axial > 0));
+            };
+        }
+        else
+        {
+            var box = result.BevelBox()!;
+            origin = new Point3D(box.X + handle.X * box.Width / 2, box.Y + handle.Y * box.Depth / 2,
+                box.Z + (handle.Z + 1) * box.Height / 2);
+            direction = -cut.FlatNormal;
+            length = amount / direction.Length;
+            direction.Normalize();
+            highlight = triangle =>
+            {
+                var target = BoxBevelTarget.FromNormal(TriangleNormal(triangle));
+                return targets.Contains(target) || rounded && target.AxisCount == 3 &&
+                    targets.Contains(target with { X = 0 }) && targets.Contains(target with { Y = 0 }) &&
+                    targets.Contains(target with { Z = 0 });
+            };
+        }
+        return SerializePreview(Geometry.Build(result).Where(highlight).ToArray(), origin, direction, length);
+    }
+
+    private static Vector3D TriangleNormal(Triangle triangle)
+    {
+        var normal = Vector3D.CrossProduct(triangle.B - triangle.A, triangle.C - triangle.A);
+        normal.Normalize();
+        return normal;
+    }
+
+    [JSExport]
+    public static string Hole(string json, double diameter) =>
+        JsonSerializer.Serialize(HoleChange(json, diameter).Result, BrowserJson.Default.Part);
+
+    [JSExport]
+    public static string HolePreview(string json, double diameter)
+    {
+        var change = HoleChange(json, diameter);
+        return SerializePreview(change.Region, change.ArrowStart!.Value, change.ArrowDirection, change.ArrowLength);
+    }
+
+    private static string SerializePreview(IReadOnlyList<Triangle> region, Point3D origin, Vector3D direction, double length) =>
+        JsonSerializer.Serialize(new FeaturePreviewResult(region, origin, origin + direction * length),
+            BrowserJson.Default.FeaturePreviewResult);
+
+    private static BuildChange HoleChange(string json, double diameter)
     {
         var request = FeatureRequest(json);
         var part = request.Part;
@@ -110,9 +189,7 @@ public static partial class BrowserGeometry
         if (!Part.ValidDimension(diameter))
             throw new ArgumentException("Enter a positive hole diameter.");
         var change = placement.Preview(diameter, depth: 0, through: true);
-        return change is null
-            ? throw new ArgumentException("The hole does not fit at that point. Use a smaller diameter or pick another point.")
-            : JsonSerializer.Serialize(change.Result, BrowserJson.Default.Part);
+        return change ?? throw new ArgumentException("The hole does not fit at that point. Use a smaller diameter or pick another point.");
     }
 
     [JSExport]
@@ -198,6 +275,7 @@ public static partial class BrowserGeometry
 [JsonSerializable(typeof(FacePickRequest))]
 [JsonSerializable(typeof(FacePickResult))]
 [JsonSerializable(typeof(FeaturePickRequest))]
+[JsonSerializable(typeof(FeaturePreviewResult))]
 [JsonSerializable(typeof(ConstraintRequest))]
 [JsonSerializable(typeof(SketchPoint[]))]
 internal partial class BrowserJson : JsonSerializerContext;
@@ -205,4 +283,5 @@ internal partial class BrowserJson : JsonSerializerContext;
 internal sealed record FacePickRequest(Part Part, Point3D Origin, Vector3D Direction);
 internal sealed record FacePickResult(Point3D Center, SketchFrame Frame, SketchPoint[][] Guide, double Distance, Point3D Point);
 internal sealed record FeaturePickRequest(Part Part, string? Kind, Point3D? Point, SketchFrame? Frame);
+internal sealed record FeaturePreviewResult(IReadOnlyList<Triangle> Region, Point3D Origin, Point3D End);
 internal sealed record ConstraintRequest(SketchPoint[] Points, ProfileConstraint[] Rules, int Preferred);

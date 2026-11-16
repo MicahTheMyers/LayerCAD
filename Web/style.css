@@ -161,3 +161,8 @@ main { border: 0; }
 #extrude-arrow.cut { stroke: #ff9298; }
 .drawing-row { display: block; width: calc(100% - 20px); margin: 2px 5px 2px 15px; text-align: left; min-height: 28px; padding: 3px 6px; background: transparent; border-color: transparent; font-size: 12px; }
 .drawing-row[aria-pressed=true] { background: #533b2b; border-color: #ce925d; }
+#feature-dialog.with-preview { position: fixed; inset: 205px 18px auto auto; margin: 0; max-height: calc(100dvh - 220px); overflow: auto; }
+#feature-dialog.with-preview::backdrop { background: transparent; }
+@media (max-height: 450px) {
+  #feature-dialog.with-preview { top: 12px; max-height: calc(100dvh - 24px); }
+}
