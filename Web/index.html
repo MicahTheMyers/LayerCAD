@@ -51,7 +51,7 @@
   </form>
   <canvas id="view" aria-label="3D model viewport"></canvas>
   <svg id="detail-overlay" aria-hidden="true"></svg>
-  <svg id="extrude-overlay" aria-hidden="true"><path id="extrude-arrow"/><circle id="hole-handle" r="11" hidden><title>Drag hole center</title></circle></svg>
+  <svg id="extrude-overlay" aria-hidden="true"><path id="extrude-arrow"/><circle id="hole-handle" r="11" hidden><title>Hold to move the hole</title></circle></svg>
   <div id="plane-selector" hidden>
     <svg id="plane-targets" aria-hidden="true"></svg>
     <div role="group" aria-label="Sketch plane">
@@ -107,10 +107,10 @@
     <datalist id="metric-sizes"><option>M2</option><option>M2.5</option><option>M3</option><option>M4</option><option>M5</option><option>M6</option><option>M8</option><option>M10</option><option>M12</option><option>Custom</option></datalist>
     <label id="feature-pitch-label" hidden>Pitch (mm) <input id="feature-pitch" type="number" min="0.01" step="any" value="1.5"></label>
     <label id="feature-depth-label" hidden>Radial depth (mm) <input id="feature-depth" type="number" min="0.01" step="any" value="0.7"></label>
-    <p id="hole-hint" hidden>Drag the red handle to place the hole.</p>
+    <p id="hole-hint" hidden>Hold the red handle briefly, then drag to place the hole.</p>
     <p id="feature-error" role="alert"></p>
     <div><button id="cancel-feature" type="button">Cancel</button><button id="apply-feature" type="submit">Apply</button></div>
   </form>
 </dialog>
-<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-14" defer></script>
+<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-15" defer></script>
 </html>
