@@ -218,21 +218,25 @@ function startViewer() {
     let tapStart = null;
     let vertexCount = 0, yaw = -0.6, pitch = 0.5, zoom = 1, pending = false, loadSequence = 0;
     let buildView = null;
+    let cameraPan = [0,0,0], touchGesture = null;
     let selectedDetail = null, choosingSketchPlane = false;
     const dot = (a,b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
     const subtract = (a,b) => a.map((value,i) => value - b[i]);
     function cameraFrame() {
         const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-        const rows = [[cy,-sy,0], [sy*sp,cy*sp,cp], [sy*cp,cy*cp,-sp]];
-        if (editor.hidden) return { rows, target: modelCenter, depth: plateDepth };
-        const part = sketchFrame();
-        const target = modelPoint(part, [0,0,0]);
-        const basis = [[1,0,0],[0,1,0],[0,0,1]].map(axis => subtract(modelPoint(part, axis), target));
+        let rows = [[cy,-sy,0], [sy*sp,cy*sp,cp], [sy*cp,cy*cp,-sp]];
+        let origin = modelCenter, basis;
+        if (!editor.hidden) {
+            const part = sketchFrame();
+            origin = modelPoint(part, [0,0,0]);
+            basis = [[1,0,0],[0,1,0],[0,0,1]].map(axis => subtract(modelPoint(part, axis), origin));
+            rows = rows.map(row => row.reduce((result, value, i) =>
+                result.map((component, axis) => component + value * basis[i][axis]), [0,0,0]));
+        }
+        const target = origin.map((value,i) => value + cameraPan[i]);
         return {
-            rows: rows.map(row => row.reduce((result, value, i) =>
-                result.map((component, axis) => component + value * basis[i][axis]), [0,0,0])),
-            target, depth: plateDepth + Math.hypot(...subtract(target, modelCenter)) / modelRadius,
-            basis
+            rows, target, origin, basis,
+            depth: plateDepth + Math.abs(dot(rows[2],subtract(target,modelCenter))) / modelRadius
         };
     }
     function viewportScale(width, height) {
@@ -244,8 +248,9 @@ function startViewer() {
         const k = viewportScale(width, height) / (2 * modelRadius);
         const a = k*dot(right,u), b = -k*dot(up,u);
         const c = -k*dot(right,v), d = k*dot(up,v);
+        const [x,y] = screenProjector(frame,width,height)(frame.origin);
         sketchSurface.setAttribute("transform",
-            `matrix(${a} ${b} ${c} ${d} ${width/2-110*(a+c)} ${height/2-110*(b+d)})`);
+            `matrix(${a} ${b} ${c} ${d} ${x-110*(a+c)} ${y-110*(b+d)})`);
     }
 
     function draw() {
@@ -323,6 +328,7 @@ function startViewer() {
         yaw = editor.hidden ? -0.6 : 0;
         pitch = editor.hidden ? 0.5 : Math.PI / 2;
         zoom = 1;
+        cameraPan = [0,0,0];
         redraw();
     }
     function scaleBy(factor) {
@@ -1461,7 +1467,7 @@ function startViewer() {
         ++referenceSequence;
         calibration = null;
         if (active) {
-            if (editor.hidden) buildView = [yaw,pitch,zoom];
+            if (editor.hidden) buildView = [yaw,pitch,zoom,cameraPan];
             reference = project.Parts[editing]?.ReferenceImage ?? null;
             drawReference();
             const guide = faceSketch?.Guide ?? [];
@@ -1471,7 +1477,7 @@ function startViewer() {
         editor.hidden = !active;
         if (active) fit();
         else if (buildView) {
-            [yaw,pitch,zoom] = buildView;
+            [yaw,pitch,zoom,cameraPan] = buildView;
             buildView = null;
         }
         closeExtrude();
@@ -1899,16 +1905,16 @@ function startViewer() {
             const fit = viewportScale(bounds.width, bounds.height);
             const x = (2 * (event.clientX - bounds.left) - bounds.width) / fit;
             const y = (bounds.height - 2 * (event.clientY - bounds.top)) / fit;
-            const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+            const frame = cameraFrame();
+            const [right,up,direction] = frame.rows;
             if (!pickingFace) {
                 extrudeFace = selectedDetail = null;
                 byId("extrude-error").textContent = "";
                 const projectPoint = point => {
-                    const [a,b,c] = point.map((value, i) => (value - modelCenter[i]) / modelRadius);
-                    const depth = a * sy + b * cy;
-                    return [a * cy - b * sy, c * cp + depth * sp, depth * cp - c * sp];
+                    const relative = subtract(point,frame.target);
+                    return frame.rows.map(row => dot(row,relative) / modelRadius);
                 };
-                let nearest = 1 / 0.9;
+                let nearest = Infinity;
                 let nearestTriangle = -1;
                 selected = -1;
                 selectedDrawing = -1;
@@ -1934,9 +1940,8 @@ function startViewer() {
                 refreshParts();
                 if (selected < 0 || project.Parts[selected].Kind === "Sketch") return;
             }
-            const direction = [sy * cp, cy * cp, -sp];
-            const origin = modelCenter.map((value, i) => value + modelRadius *
-                ([cy * x + sy * sp * y, -sy * x + cy * sp * y, cp * y][i] - 2 * direction[i]));
+            const origin = frame.target.map((value, i) => value + modelRadius *
+                (right[i]*x + up[i]*y - (frame.depth+1)*direction[i]));
             const vector = ([X,Y,Z]) => ({ X,Y,Z });
             if (!geometryEngine) {
                 if (!extrudePanel.hidden || pickingFace) throw new Error("Face picking requires the advanced geometry engine.");
@@ -1977,6 +1982,19 @@ function startViewer() {
         if (!editor.hidden && Math.abs(pitch) < 0.035) pitch = (Math.sign(pitch) || 1) * 0.035;
         redraw();
     }
+    function pan(dx,dy,from = cameraPan) {
+        const scale = viewportScale(canvas.clientWidth,canvas.clientHeight) / (2 * modelRadius);
+        if (!scale) return;
+        const [right,up] = cameraFrame().rows;
+        cameraPan = from.map((value,i) => value + (-dx*right[i] + dy*up[i]) / scale);
+        redraw();
+    }
+    function touchPair() {
+        const touches = [...pointers.values()].filter(pointer => pointer.touch);
+        if (touches.length !== 2) return null;
+        const [a,b] = touches.map(pointer => pointer.last);
+        return { center: a.map((value,i) => (value+b[i])/2), span: Math.hypot(...subtract(a,b)) };
+    }
     for (const surface of [canvas, plane]) {
         surface.addEventListener("pointerdown", event => {
             if (![0,1].includes(event.button)) return;
@@ -1984,31 +2002,41 @@ function startViewer() {
             const orbit = event.button === 1 || event.pointerType === "touch";
             if (event.button === 1) event.preventDefault();
             const start = [event.clientX,event.clientY];
-            pointers.set(event.pointerId, { start, last: start, orbit, moved: false });
+            pointers.set(event.pointerId, { start, last: start, orbit, moved: false,
+                touch: event.pointerType === "touch", middle: event.button === 1 });
             tapStart = pointers.size === 1 && event.button === 0 ? start : null;
-            if (pointers.size > 1) for (const pointer of pointers.values()) pointer.moved = true;
+            if (pointers.size > 1) for (const pointer of pointers.values()) pointer.moved = pointer.multi = true;
+            const pair = touchPair();
+            touchGesture = pair ? { ...pair, zoom, pan: cameraPan } : null;
         });
         surface.addEventListener("pointermove", event => {
             const pointer = pointers.get(event.pointerId);
             if (!pointer) return;
             const next = [event.clientX,event.clientY];
             const delta = next.map((coordinate,i) => coordinate - pointer.last[i]);
+            pointer.last = next;
             if (Math.hypot(...next.map((coordinate,i) => coordinate - pointer.start[i])) > 5 && pointer.orbit) {
                 pointer.moved = true;
                 tapStart = null;
             }
-            if (pointers.size === 1 && pointer.orbit && (pointer.moved || event.pointerType !== "touch")) {
-                orbit(...delta);
-            } else if (pointers.size === 2) {
-                const other = [...pointers.entries()].find(([id]) => id !== event.pointerId)[1].last;
-                const distance = point => Math.hypot(point[0]-other[0],point[1]-other[1]);
-                const before = distance(pointer.last);
-                if (before > 0) scaleBy(distance(next) / before);
+            if (pointers.size === 1 && pointer.orbit && !pointer.multi && (pointer.moved || !pointer.touch)) {
+                if (pointer.middle && event.ctrlKey) pan(...delta);
+                else orbit(...delta);
+            } else if (pointer.touch && touchGesture) {
+                const pair = touchPair();
+                if (!pair) return;
+                zoom = Math.max(0.15,Math.min(20,touchGesture.zoom * (touchGesture.span ? pair.span/touchGesture.span : 1)));
+                const bounds = canvas.getBoundingClientRect();
+                const center = [bounds.left+bounds.width/2,bounds.top+bounds.height/2];
+                const ratio = zoom / touchGesture.zoom;
+                const shift = pair.center.map((value,i) => value-center[i] - ratio*(touchGesture.center[i]-center[i]));
+                pan(...shift,touchGesture.pan);
             }
-            pointer.last = next;
         });
         for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
-            surface.addEventListener(type, event => pointers.delete(event.pointerId));
+            surface.addEventListener(type, event => {
+                if (pointers.delete(event.pointerId)) touchGesture = null;
+            });
         surface.addEventListener("wheel", event => {
             event.preventDefault();
             scaleBy(Math.exp(-event.deltaY * 0.001));
