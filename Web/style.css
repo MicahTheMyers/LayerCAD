@@ -166,3 +166,6 @@ main { border: 0; }
 @media (max-height: 450px) {
   #feature-dialog.with-preview { top: 12px; max-height: calc(100dvh - 24px); }
 }
+.popup-title { display: block; padding: 5px 7px; border-radius: 4px; background: #26384d; cursor: grab; touch-action: none; user-select: none; }
+.popup-title:active { cursor: grabbing; }
+#build-extrude { max-height: 100%; overflow: auto; }

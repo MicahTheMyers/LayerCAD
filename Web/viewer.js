@@ -737,6 +737,43 @@ function startViewer() {
         applyBoolean(stock, cavity, "subtract", false);
     };
     const featureDialog = byId("feature-dialog");
+    function makePopupDraggable(panel, container = null) {
+        const title = panel.querySelector(".popup-title");
+        let x = 0, y = 0, drag = null;
+        function move(nextX, nextY) {
+            if (!panel.getClientRects().length) return;
+            const rect = panel.getBoundingClientRect();
+            const bounds = container?.getBoundingClientRect() ??
+                { left: 0, top: 0, right: document.documentElement.clientWidth, bottom: document.documentElement.clientHeight };
+            const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(value, maximum));
+            x = clamp(nextX, x + bounds.left - rect.left, x + bounds.right - rect.right);
+            y = clamp(nextY, y + bounds.top - rect.top, y + bounds.bottom - rect.bottom);
+            panel.style.translate = `${x}px ${y}px`;
+        }
+        title.addEventListener("pointerdown", event => {
+            if (!event.isPrimary || event.button !== 0) return;
+            drag = { id: event.pointerId, startX: event.clientX - x, startY: event.clientY - y };
+            title.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        });
+        title.addEventListener("pointermove", event => {
+            if (drag?.id === event.pointerId) move(event.clientX - drag.startX, event.clientY - drag.startY);
+        });
+        title.addEventListener("lostpointercapture", () => { drag = null; });
+        title.addEventListener("keydown", event => {
+            const direction = { ArrowLeft: [-1,0], ArrowRight: [1,0], ArrowUp: [0,-1], ArrowDown: [0,1] }[event.key];
+            if (!direction) return;
+            event.preventDefault();
+            const [dx,dy] = direction;
+            move(x + 12*dx,y + 12*dy);
+        });
+        const clampToBounds = () => move(x,y);
+        const observer = new ResizeObserver(clampToBounds);
+        observer.observe(panel);
+        if (container) observer.observe(container);
+        window.addEventListener("resize", clampToBounds);
+    }
+    makePopupDraggable(featureDialog);
     const featureAmount = byId("feature-amount");
     const featureSurface = byId("feature-surface");
     const featureMetric = byId("feature-metric");
@@ -948,6 +985,7 @@ function startViewer() {
         if (changeParts([...project.Parts, ...copies])) fit();
     };
     const extrudePanel = byId("build-extrude");
+    makePopupDraggable(extrudePanel, byId("viewport"));
     let extrudeFace = null;
     const canExtrude = part => part?.Kind === "Sketch" && !!part.Profile;
     function buildExtrudeSource() {

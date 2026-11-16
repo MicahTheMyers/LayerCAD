@@ -3,7 +3,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LayerCAD Web</title>
-<link rel="stylesheet" href="style.css?v=workspace-9">
+<link rel="stylesheet" href="style.css?v=workspace-10">
 <header><details><summary>File ▾</summary><div class="tool-popover"><button type="button" id="new-project">New project</button><label class="open">Open model<input id="file" type="file" accept=".layercad,.stl"></label><button id="save" type="button" disabled>Save project</button></div></details>
   <h1><img src="layercad.ico" width="36" height="36" alt="">LayerCAD</h1>
   <button id="export" type="button" disabled>Export STL</button>
@@ -39,7 +39,7 @@
   <div id="view-controls"><svg id="view-cube" class="view-cube" viewBox="0 0 88 88" role="group" aria-label="View orientation. Drag to orbit or click a face."></svg><button id="fit" type="button">Reset view</button></div>
   <output id="volume-label"></output>
   <form id="build-extrude" hidden aria-label="Extrude">
-    <strong>Extrude</strong>
+    <strong class="popup-title" tabindex="0" title="Drag to move, or use the arrow keys">Extrude</strong>
     <p id="extrude-target" aria-live="polite"></p>
     <label>Distance (mm) <input id="build-extrude-distance" type="number" step="any" value="10" required></label>
     <label>Operation <select id="build-extrude-operation"><option>Add</option><option>Cut</option><option>Merge</option></select></label>
@@ -96,7 +96,7 @@
 </main>
 <dialog id="feature-dialog" aria-labelledby="feature-title">
   <form id="feature-form">
-    <strong id="feature-title"></strong>
+    <strong id="feature-title" class="popup-title" tabindex="0" title="Drag to move, or use the arrow keys"></strong>
     <label id="feature-amount-label"><span></span> <input id="feature-amount" type="number" min="0" step="any" required></label>
     <label id="feature-bevel-style-label" hidden>Style <select id="feature-bevel-style"><option>Flat</option><option>Rounded</option></select></label>
     <label id="feature-surface-label" hidden>Surface <select id="feature-surface"></select></label>
@@ -108,5 +108,5 @@
     <div><button id="cancel-feature" type="button">Cancel</button><button type="submit">Apply</button></div>
   </form>
 </dialog>
-<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-9" defer></script>
+<script src="sketch.js?v=editor-5" defer></script><script src="viewer.js?v=workspace-10" defer></script>
 </html>
