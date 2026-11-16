@@ -843,9 +843,13 @@ function startViewer() {
         }};
         featureDialog.classList.toggle("with-preview", !thread);
         featureDialog.classList.toggle("hole-placement",tool === "hole");
-        if (tool === "hole") featureDialog.show();
-        else featureDialog.showModal();
-        featureAmount.select();
+        if (tool === "hole") {
+            featureDialog.show();
+            byId("feature-title").focus({ preventScroll: true });
+        } else {
+            featureDialog.showModal();
+            featureAmount.select();
+        }
         if (!updateFeaturePreview() && tool === "hole") {
             activeFeature.request.Point = detail.face.Point;
             if (!updateFeaturePreview()) {
@@ -885,6 +889,8 @@ function startViewer() {
     };
     holeHandle.addEventListener("pointerdown", event => {
         if (!holeOpen() || !event.isPrimary || event.button !== 0) return;
+        if (featureDialog.contains(document.activeElement))
+            byId("feature-title").focus({ preventScroll: true });
         const bounds = canvas.getBoundingClientRect();
         holeDrag = { id: event.pointerId, x: event.clientX-bounds.left-Number(holeHandle.getAttribute("cx")),
             y: event.clientY-bounds.top-Number(holeHandle.getAttribute("cy")),
