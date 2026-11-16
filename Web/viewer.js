@@ -217,14 +217,20 @@ function startViewer() {
     const pointers = new Map();
     let tapStart = null;
     let vertexCount = 0, yaw = -0.6, pitch = 0.5, zoom = 1, pending = false, loadSequence = 0;
-    let buildView = null;
+    let buildView = null, roll = 0;
     let cameraPan = [0,0,0], touchGesture = null;
     let selectedDetail = null, choosingSketchPlane = false;
     const dot = (a,b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
     const subtract = (a,b) => a.map((value,i) => value - b[i]);
-    function cameraFrame() {
+    function cameraRows() {
         const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-        let rows = [[cy,-sy,0], [sy*sp,cy*sp,cp], [sy*cp,cy*cp,-sp]];
+        const right = [cy,-sy,0], up = [sy*sp,cy*sp,cp];
+        const c = Math.cos(roll), s = Math.sin(roll);
+        return [right.map((value,i) => c*value + s*up[i]),
+            up.map((value,i) => c*value - s*right[i]), [sy*cp,cy*cp,-sp]];
+    }
+    function cameraFrame() {
+        let rows = cameraRows();
         let origin = modelCenter, basis;
         if (!editor.hidden) {
             const part = sketchFrame();
@@ -328,6 +334,7 @@ function startViewer() {
         yaw = editor.hidden ? -0.6 : 0;
         pitch = editor.hidden ? 0.5 : Math.PI / 2;
         zoom = 1;
+        roll = 0;
         cameraPan = [0,0,0];
         redraw();
     }
@@ -1467,7 +1474,7 @@ function startViewer() {
         ++referenceSequence;
         calibration = null;
         if (active) {
-            if (editor.hidden) buildView = [yaw,pitch,zoom,cameraPan];
+            if (editor.hidden) buildView = [yaw,pitch,roll,zoom,cameraPan];
             reference = project.Parts[editing]?.ReferenceImage ?? null;
             drawReference();
             const guide = faceSketch?.Guide ?? [];
@@ -1477,7 +1484,7 @@ function startViewer() {
         editor.hidden = !active;
         if (active) fit();
         else if (buildView) {
-            [yaw,pitch,zoom,cameraPan] = buildView;
+            [yaw,pitch,roll,zoom,cameraPan] = buildView;
             buildView = null;
         }
         closeExtrude();
@@ -1776,6 +1783,7 @@ function startViewer() {
         const select = () => {
             yaw = horizontal;
             pitch = !editor.hidden && vertical === 0 ? 0.035 : vertical;
+            roll = 0;
             redraw();
         };
         group.addEventListener("keydown", event => {
@@ -1786,13 +1794,10 @@ function startViewer() {
         return { group, polygon, label, axis, sign, select };
     });
     function drawViewCube() {
-        const horizontal = yaw, vertical = pitch;
-        const cy = Math.cos(horizontal), sy = Math.sin(horizontal);
-        const cp = Math.cos(vertical), sp = Math.sin(vertical);
-        const camera = [-sy*cp, -cy*cp, sp];
-        const project = ([x,y,z]) => [44 + 21*(x*cy-y*sy), 44 - 21*(z*cp+(x*sy+y*cy)*sp)];
+        const [right,up,depth] = cameraRows();
+        const project = point => [44 + 21*dot(right,point), 44 - 21*dot(up,point)];
         for (const { group, polygon, label, axis, sign } of cubeFaces) {
-            const facing = camera[axis] * sign;
+            const facing = -depth[axis] * sign;
             group.style.display = facing > 0.001 ? "" : "none";
             group.setAttribute("tabindex", facing > 0.001 ? "0" : "-1");
             if (facing <= 0.001) continue;
@@ -1993,7 +1998,8 @@ function startViewer() {
         const touches = [...pointers.values()].filter(pointer => pointer.touch);
         if (touches.length !== 2) return null;
         const [a,b] = touches.map(pointer => pointer.last);
-        return { center: a.map((value,i) => (value+b[i])/2), span: Math.hypot(...subtract(a,b)) };
+        const [dx,dy] = subtract(b,a);
+        return { center: a.map((value,i) => (value+b[i])/2), span: Math.hypot(dx,dy), angle: Math.atan2(dy,dx) };
     }
     const scrollPreference = byId("viewport-scroll");
     try {
@@ -2029,7 +2035,7 @@ function startViewer() {
             tapStart = pointers.size === 1 && event.button === 0 ? start : null;
             if (pointers.size > 1) for (const pointer of pointers.values()) pointer.moved = pointer.multi = true;
             const pair = touchPair();
-            touchGesture = pair ? { ...pair, zoom, pan: cameraPan } : null;
+            touchGesture = pair ? { ...pair, roll, zoom, pan: cameraPan } : null;
         });
         surface.addEventListener("pointermove", event => {
             const pointer = pointers.get(event.pointerId);
@@ -2048,10 +2054,15 @@ function startViewer() {
                 const pair = touchPair();
                 if (!pair) return;
                 zoom = Math.max(0.15,Math.min(20,touchGesture.zoom * (touchGesture.span ? pair.span/touchGesture.span : 1)));
+                const twist = touchGesture.span >= 8 && pair.span >= 8 ? pair.angle-touchGesture.angle : 0;
+                const c = Math.cos(twist), s = Math.sin(twist);
+                roll = (touchGesture.roll + twist) % (2*Math.PI);
                 const bounds = canvas.getBoundingClientRect();
                 const center = [bounds.left+bounds.width/2,bounds.top+bounds.height/2];
                 const ratio = zoom / touchGesture.zoom;
-                const shift = pair.center.map((value,i) => value-center[i] - ratio*(touchGesture.center[i]-center[i]));
+                const [x,y] = subtract(touchGesture.center,center);
+                const rotated = [c*x-s*y,s*x+c*y];
+                const shift = pair.center.map((value,i) => value-center[i]-ratio*rotated[i]);
                 pan(...shift,touchGesture.pan);
             }
         });
