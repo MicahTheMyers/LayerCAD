@@ -887,12 +887,21 @@ function startViewer() {
         if (!holeOpen() || !event.isPrimary || event.button !== 0) return;
         const bounds = canvas.getBoundingClientRect();
         holeDrag = { id: event.pointerId, x: event.clientX-bounds.left-Number(holeHandle.getAttribute("cx")),
-            y: event.clientY-bounds.top-Number(holeHandle.getAttribute("cy")) };
+            y: event.clientY-bounds.top-Number(holeHandle.getAttribute("cy")),
+            startX: event.clientX, startY: event.clientY, readyAt: performance.now()+250, moving: false };
         holeHandle.setPointerCapture(event.pointerId);
         event.preventDefault();
     });
     holeHandle.addEventListener("pointermove", event => {
         if (!holeOpen() || event.pointerId !== holeDrag?.id) return;
+        if (!(event.buttons & 1)) { holeDrag = null; return; }
+        if (!holeDrag.moving) {
+            if (performance.now() < holeDrag.readyAt) {
+                if (Math.hypot(event.clientX-holeDrag.startX,event.clientY-holeDrag.startY) > 7) holeDrag = null;
+                return;
+            }
+            holeDrag.moving = true;
+        }
         const bounds = canvas.getBoundingClientRect();
         const frame = cameraFrame();
         const [right,up,depth] = frame.rows;
@@ -911,7 +920,8 @@ function startViewer() {
         request.Point = { X,Y,Z };
         updateFeaturePreview();
     });
-    holeHandle.addEventListener("lostpointercapture", () => { holeDrag = null; });
+    for (const type of ["pointerup","pointercancel","lostpointercapture"])
+        holeHandle.addEventListener(type, () => { holeDrag = null; });
     for (const tool of ["bevel","hole","thread"]) byId(tool).onclick = () => openFeature(tool);
     byId("cancel-feature").onclick = () => featureDialog.close();
     byId("feature-form").onsubmit = event => {
